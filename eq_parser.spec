@@ -49,7 +49,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='EQLogParser',
+    name='pyEQLogParser',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
