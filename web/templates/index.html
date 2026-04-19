@@ -375,6 +375,24 @@ body {
 }
 .spell-row:last-of-type td { border-bottom: 1px solid #1a1a1a; }
 
+/* ── Damage log ─────────────────────────────────── */
+#log-filter {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 5px 9px;
+  outline: none;
+  box-sizing: border-box;
+}
+#log-filter:focus { border-color: var(--accent); }
+.log-crit { color: var(--accent2); font-weight: 600; }
+.log-time { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.log-type { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.log-dmg  { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
 #empty-state {
   display: flex;
   flex-direction: column;
@@ -501,6 +519,7 @@ body {
       <button class="tab-btn" data-tab="healing">Healing</button>
       <button class="tab-btn" data-tab="tanking">Tanking</button>
       <button class="tab-btn" data-tab="timeline">Timeline</button>
+      <button class="tab-btn" data-tab="log">Log</button>
       <button id="exact-btn" title="Toggle exact numbers" style="margin-left:auto;display:none;">Exact</button>
       <button id="copy-btn" title="Copy to clipboard" style="display:none;">Copy</button>
     </div>
@@ -519,6 +538,7 @@ let allFights = [];
 let selectedIds = new Set();
 let activeTab = 'dps';
 let detailData = null;
+let damageLogData = null;
 let sortState = { tab: { dps: { col: 'total', asc: false }, healing: { col: 'total', asc: false }, tanking: { col: 'total', asc: false } } };
 let expandedRows = new Set();
 let lastClickedId = null;
@@ -595,6 +615,7 @@ document.getElementById('parse-btn').addEventListener('click', async () => {
     expandedRows.clear();
     lastClickedId = null;
     detailData = null;
+    damageLogData = null;
     renderFightList();
     clearDetail();
     setStatus(`${data.count} fight${data.count !== 1 ? 's' : ''} found`, 'ok');
@@ -684,8 +705,10 @@ async function loadDetail() {
     detailData = await res.json();
     updateDetailHeader();
     updateTabButtons();
+    damageLogData = null;
     renderTab(activeTab);
     _loadTimeline(token, ids);
+    _loadDamageLog(token, ids);
   } catch (e) {
     setStatus('Error loading detail: ' + e.message, 'error');
   }
@@ -706,6 +729,21 @@ async function _loadTimeline(token, ids) {
   } catch (e) {
     // timeline fetch failed silently — tab will show error state
   }
+}
+
+async function _loadDamageLog(token, ids) {
+  try {
+    const res = await fetch('/api/damage-log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    if (token !== _timelineToken) return;
+    const data = await res.json();
+    if (token !== _timelineToken) return;
+    damageLogData = data.damage_log || [];
+    if (activeTab === 'log') renderLog();
+  } catch (e) {}
 }
 
 function updateDetailHeader() {
@@ -730,6 +768,7 @@ function clearDetail() {
       <div>Select a fight from the list</div>
     </div>`;
   detailData = null;
+  damageLogData = null;
   updateTabButtons();
 }
 
@@ -753,9 +792,9 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 });
 
 function updateTabButtons() {
-  const visible = detailData && activeTab !== 'timeline';
-  document.getElementById('copy-btn').style.display  = visible ? '' : 'none';
-  document.getElementById('exact-btn').style.display = visible ? '' : 'none';
+  const dataTab = detailData && activeTab !== 'timeline' && activeTab !== 'log';
+  document.getElementById('copy-btn').style.display  = dataTab ? '' : 'none';
+  document.getElementById('exact-btn').style.display = dataTab ? '' : 'none';
 }
 
 function copyTabData() {
@@ -801,6 +840,7 @@ function copyTabData() {
 function renderTab(tab) {
   if (!detailData) return;
   if (tab === 'timeline') { renderTimeline(); return; }
+  if (tab === 'log') { renderLog(); return; }
   const rows = detailData[tab] || [];
   const sort = sortState.tab[tab] || { col: 'total', asc: false };
   const sorted = sortRows([...rows], sort.col, sort.asc);
@@ -1031,6 +1071,99 @@ function esc(s) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// ── Damage log ─────────────────────────────────────
+function renderLog() {
+  const content = document.getElementById('tab-content');
+
+  if (!damageLogData) {
+    content.innerHTML = `<div style="padding:40px;color:var(--muted);text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px;">
+      <span class="spinner" style="width:22px;height:22px;"></span>
+      <div>Loading damage log…</div>
+    </div>`;
+    return;
+  }
+
+  const MAX_ROWS = 5000;
+  let filterText = '';
+
+  function getRows() {
+    const q = filterText.trim().toLowerCase();
+    const rows = q
+      ? damageLogData.filter(r =>
+          r.attacker.toLowerCase().includes(q) ||
+          (r.attacker_owner || '').toLowerCase().includes(q) ||
+          r.defender.toLowerCase().includes(q) ||
+          r.action.toLowerCase().includes(q) ||
+          r.type.toLowerCase().includes(q))
+      : damageLogData;
+    return rows.slice(0, MAX_ROWS);
+  }
+
+  function buildRows(rows) {
+    let html = '';
+    for (const r of rows) {
+      const attacker = r.attacker_owner ? `${r.attacker_owner} (${r.attacker})` : r.attacker;
+      const dmgCell  = r.crit
+        ? `<td class="log-dmg log-crit">${fmt(r.total)} !</td>`
+        : `<td class="log-dmg">${fmt(r.total)}</td>`;
+      html += `<tr>
+        <td class="log-time">${fmtDur(r.t)}</td>
+        <td>${esc(attacker)}</td>
+        <td>${esc(r.action)}</td>
+        <td class="log-type">${esc(r.type)}</td>
+        ${dmgCell}
+        <td>${esc(r.defender)}</td>
+      </tr>`;
+    }
+    return html;
+  }
+
+  content.innerHTML = `
+    <div style="height:100%;display:flex;flex-direction:column;overflow:hidden;padding:8px 10px;gap:6px;box-sizing:border-box;">
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+        <input id="log-filter" type="text" placeholder="Filter by attacker, defender, action…" autocomplete="off">
+        <span id="log-count" style="font-size:11px;color:var(--muted);white-space:nowrap;"></span>
+      </div>
+      <div style="flex:1;overflow:auto;min-height:0;">
+        <table class="data-table">
+          <thead><tr>
+            <th style="cursor:default">Time</th>
+            <th style="cursor:default">Attacker</th>
+            <th style="cursor:default">Action</th>
+            <th style="cursor:default">Type</th>
+            <th class="th-num" style="cursor:default">Damage</th>
+            <th style="cursor:default">Defender</th>
+          </tr></thead>
+          <tbody id="log-body"></tbody>
+        </table>
+      </div>
+    </div>`;
+
+  function refresh() {
+    const rows = getRows();
+    document.getElementById('log-body').innerHTML = buildRows(rows);
+    const total = filterText ? damageLogData.filter(r => {
+      const q = filterText.trim().toLowerCase();
+      return r.attacker.toLowerCase().includes(q) ||
+             (r.attacker_owner || '').toLowerCase().includes(q) ||
+             r.defender.toLowerCase().includes(q) ||
+             r.action.toLowerCase().includes(q) ||
+             r.type.toLowerCase().includes(q);
+    }).length : damageLogData.length;
+    const shown = Math.min(total, MAX_ROWS);
+    document.getElementById('log-count').textContent =
+      shown < total ? `${shown.toLocaleString()} of ${total.toLocaleString()} rows` :
+      `${total.toLocaleString()} rows`;
+  }
+
+  document.getElementById('log-filter').addEventListener('input', e => {
+    filterText = e.target.value;
+    refresh();
+  });
+
+  refresh();
 }
 
 // ── Timeline chart ────────────────────────────────
