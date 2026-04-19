@@ -170,38 +170,107 @@ def aggregate_fights(fights: list[Fight]) -> dict:
     ], key=lambda x: -x["total"])
 
     # Healing
-    heal_totals: dict[str, int] = defaultdict(int)
+    def _new_heal_entry():
+        return {
+            "total": 0, "over_total": 0, "hits": 0, "max_hit": 0,
+            "by_spell": defaultdict(lambda: {"total": 0, "over_total": 0, "hits": 0, "max_hit": 0, "type": ""}),
+        }
+
+    heal_totals: dict[str, dict] = defaultdict(_new_heal_entry)
     for f in fights:
         for _, rec in f.heals:
-            heal_totals[rec.healer] += rec.total
+            if rec.total <= 0 and rec.over_total <= 0:
+                continue
+            h = heal_totals[rec.healer]
+            h["total"] += rec.total
+            h["over_total"] += rec.over_total
+            h["hits"] += 1
+            if rec.total > h["max_hit"]:
+                h["max_hit"] = rec.total
+            spell_key = rec.sub_type if rec.sub_type else rec.type
+            sp = h["by_spell"][spell_key]
+            sp["total"] += rec.total
+            sp["over_total"] += rec.over_total
+            sp["hits"] += 1
+            if rec.total > sp["max_hit"]:
+                sp["max_hit"] = rec.total
+            sp["type"] = rec.type
 
-    grand_heal = sum(heal_totals.values()) or 1
+    grand_heal = sum(v["total"] for v in heal_totals.values()) or 1
     heal_rows = sorted([
         {
             "name": name,
-            "total": total,
-            "hps": round(total / total_duration, 1),
-            "pct": round(total / grand_heal * 100, 1),
+            "total": d["total"],
+            "over_total": d["over_total"],
+            "hps": round(d["total"] / total_duration, 1),
+            "hits": d["hits"],
+            "max_hit": d["max_hit"],
+            "avg_hit": round(d["total"] / d["hits"]) if d["hits"] > 0 else 0,
+            "pct": round(d["total"] / grand_heal * 100, 1),
+            "overheal_pct": round(d["over_total"] / (d["total"] + d["over_total"]) * 100, 1)
+                            if (d["total"] + d["over_total"]) > 0 else 0.0,
+            "by_spell": {
+                k: {
+                    **v,
+                    "avg_hit": round(v["total"] / v["hits"]) if v["hits"] > 0 else 0,
+                    "overheal_pct": round(v["over_total"] / (v["total"] + v["over_total"]) * 100, 1)
+                                    if (v["total"] + v["over_total"]) > 0 else 0.0,
+                }
+                for k, v in sorted(d["by_spell"].items(), key=lambda x: -x[1]["total"])
+            },
         }
-        for name, total in heal_totals.items()
+        for name, d in heal_totals.items()
     ], key=lambda x: -x["total"])
 
     # Tanking
-    tank_totals: dict[str, dict] = defaultdict(lambda: {"total": 0, "by_type": defaultdict(int)})
+    def _new_tank_entry():
+        return {
+            "total": 0, "hits": 0, "max_hit": 0,
+            "by_type": defaultdict(int),
+            "by_attacker": defaultdict(lambda: {"total": 0, "hits": 0, "max_hit": 0, "by_type": defaultdict(int)}),
+        }
+
+    tank_totals: dict[str, dict] = defaultdict(_new_tank_entry)
     for f in fights:
         for _, rec in f.damage_taken:
+            if rec.total <= 0:
+                continue
             name = rec.defender
-            tank_totals[name]["total"] += rec.total
-            tank_totals[name]["by_type"][rec.type] += rec.total
+            t = tank_totals[name]
+            t["total"] += rec.total
+            t["hits"] += 1
+            if rec.total > t["max_hit"]:
+                t["max_hit"] = rec.total
+            t["by_type"][rec.type] += rec.total
+            attacker = rec.attacker_owner or rec.attacker
+            a = t["by_attacker"][attacker]
+            a["total"] += rec.total
+            a["hits"] += 1
+            if rec.total > a["max_hit"]:
+                a["max_hit"] = rec.total
+            a["by_type"][rec.type] += rec.total
 
     grand_taken = sum(v["total"] for v in tank_totals.values()) or 1
     tank_rows = sorted([
         {
             "name": name,
             "total": d["total"],
+            "hits": d["hits"],
+            "avg_hit": round(d["total"] / d["hits"]) if d["hits"] > 0 else 0,
+            "max_hit": d["max_hit"],
             "dtps": round(d["total"] / total_duration, 1),
             "pct": round(d["total"] / grand_taken * 100, 1),
             "by_type": {k: v for k, v in sorted(d["by_type"].items(), key=lambda x: -x[1])},
+            "by_attacker": {
+                k: {
+                    "total": v["total"],
+                    "hits": v["hits"],
+                    "avg_hit": round(v["total"] / v["hits"]) if v["hits"] > 0 else 0,
+                    "max_hit": v["max_hit"],
+                    "by_type": {t: c for t, c in sorted(v["by_type"].items(), key=lambda x: -x[1])},
+                }
+                for k, v in sorted(d["by_attacker"].items(), key=lambda x: -x[1]["total"])
+            },
         }
         for name, d in tank_totals.items()
     ], key=lambda x: -x["total"])
@@ -212,8 +281,90 @@ def aggregate_fights(fights: list[Fight]) -> dict:
         "tanking": tank_rows,
         "duration": round(total_duration),
         "total_damage": sum(f.total_damage for f in fights),
-        "dps_timeline": _build_dps_timeline(fights),
         "timeline_bucket": _TIMELINE_BUCKET,
+    }
+
+
+def build_timelines(fights: list[Fight]) -> dict:
+    return {
+        "dps_timeline": _build_dps_timeline(fights),
+        "dps_timeline_overall": _build_timeline_overall(fights),
+        "dps_timeline_by_type": _build_timeline_by_type(fights),
+        "dps_timeline_by_spell": _build_timeline_by_spell(fights),
+        "timeline_bucket": _TIMELINE_BUCKET,
+    }
+
+
+def _build_timeline_overall(fights: list[Fight]) -> dict:
+    if not fights:
+        return {}
+    start = min(f.start_time for f in fights)
+    end = max(f.end_time for f in fights)
+    n_buckets = int((end - start) / _TIMELINE_BUCKET) + 2
+
+    buckets = [0] * n_buckets
+    for f in fights:
+        for t, rec in f.damage_dealt:
+            if rec.total <= 0:
+                continue
+            idx = min(int((t - start) / _TIMELINE_BUCKET), n_buckets - 1)
+            buckets[idx] += rec.total
+
+    return {
+        "All Players": [[i * _TIMELINE_BUCKET, round(dmg / _TIMELINE_BUCKET)]
+                        for i, dmg in enumerate(buckets)]
+    }
+
+
+def _build_timeline_by_type(fights: list[Fight]) -> dict:
+    if not fights:
+        return {}
+    start = min(f.start_time for f in fights)
+    end = max(f.end_time for f in fights)
+    n_buckets = int((end - start) / _TIMELINE_BUCKET) + 2
+
+    type_buckets: dict[str, list[int]] = {}
+    for f in fights:
+        for t, rec in f.damage_dealt:
+            if rec.total <= 0:
+                continue
+            dmg_type = rec.type
+            if dmg_type not in type_buckets:
+                type_buckets[dmg_type] = [0] * n_buckets
+            idx = min(int((t - start) / _TIMELINE_BUCKET), n_buckets - 1)
+            type_buckets[dmg_type][idx] += rec.total
+
+    totals = {k: sum(v) for k, v in type_buckets.items()}
+    return {
+        dmg_type: [[i * _TIMELINE_BUCKET, round(dmg / _TIMELINE_BUCKET)]
+                   for i, dmg in enumerate(buckets)]
+        for dmg_type, buckets in sorted(type_buckets.items(), key=lambda x: -totals[x[0]])
+    }
+
+
+def _build_timeline_by_spell(fights: list[Fight]) -> dict:
+    if not fights:
+        return {}
+    start = min(f.start_time for f in fights)
+    end = max(f.end_time for f in fights)
+    n_buckets = int((end - start) / _TIMELINE_BUCKET) + 2
+
+    spell_buckets: dict[str, list[int]] = {}
+    for f in fights:
+        for t, rec in f.damage_dealt:
+            if rec.total <= 0:
+                continue
+            key = rec.sub_type if rec.sub_type else rec.type
+            if key not in spell_buckets:
+                spell_buckets[key] = [0] * n_buckets
+            idx = min(int((t - start) / _TIMELINE_BUCKET), n_buckets - 1)
+            spell_buckets[key][idx] += rec.total
+
+    totals = {k: sum(v) for k, v in spell_buckets.items()}
+    return {
+        key: [[i * _TIMELINE_BUCKET, round(dmg / _TIMELINE_BUCKET)]
+              for i, dmg in enumerate(buckets)]
+        for key, buckets in sorted(spell_buckets.items(), key=lambda x: -totals[x[0]])
     }
 
 

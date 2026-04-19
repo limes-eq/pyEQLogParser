@@ -442,6 +442,7 @@ body {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 </style>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
 </head>
 <body>
 
@@ -652,18 +653,40 @@ function rangeSelect(toId, filtered) {
 }
 
 // ── Detail ─────────────────────────────────────────
+let _timelineToken = 0;
+
 async function loadDetail() {
+  const token = ++_timelineToken;
   try {
+    const ids = [...selectedIds];
     const res = await fetch('/api/detail', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids: [...selectedIds] }),
+      body: JSON.stringify({ ids }),
     });
     detailData = await res.json();
     updateDetailHeader();
     renderTab(activeTab);
+    _loadTimeline(token, ids);
   } catch (e) {
     setStatus('Error loading detail: ' + e.message, 'error');
+  }
+}
+
+async function _loadTimeline(token, ids) {
+  try {
+    const res = await fetch('/api/timeline', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    if (token !== _timelineToken) return;
+    const tl = await res.json();
+    if (token !== _timelineToken) return;
+    Object.assign(detailData, tl);
+    if (activeTab === 'timeline') renderTimeline();
+  } catch (e) {
+    // timeline fetch failed silently — tab will show error state
   }
 }
 
@@ -720,20 +743,28 @@ function renderTab(tab) {
     { key: 'pct',       label: '%',         cls: 'td-pct',  type: 'num', fmt: v => v + '%' },
     { key: '_bar',      label: '',          cls: 'td-bar',  type: 'bar', barClass: 'bar-dps' },
   ] : tab === 'healing' ? [
-    { key: 'name',  label: 'Healer',     cls: 'td-name', type: 'str' },
-    { key: 'total', label: 'Total Heal', cls: 'td-num',  type: 'num', fmt: fmt },
-    { key: 'hps',   label: 'HPS',        cls: 'td-num',  type: 'num', fmt: v => fmt(v) + '/s' },
-    { key: 'pct',   label: '%',          cls: 'td-pct',  type: 'num', fmt: v => v + '%' },
-    { key: '_bar',  label: '',           cls: 'td-bar',  type: 'bar', barClass: 'bar-heal' },
+    { key: 'name',         label: 'Healer',     cls: 'td-name', type: 'str' },
+    { key: 'total',        label: 'Total Heal', cls: 'td-num',  type: 'num', fmt: fmt },
+    { key: 'hps',          label: 'HPS',        cls: 'td-num',  type: 'num', fmt: v => fmt(v) + '/s' },
+    { key: 'hits',         label: 'Hits',       cls: 'td-num',  type: 'num', fmt: v => v.toLocaleString() },
+    { key: 'avg_hit',      label: 'Avg Hit',    cls: 'td-num',  type: 'num', fmt: fmt },
+    { key: 'max_hit',      label: 'Max Hit',    cls: 'td-num',  type: 'num', fmt: fmt },
+    { key: 'over_total',   label: 'Overheal',   cls: 'td-num',  type: 'num', fmt: fmt },
+    { key: 'overheal_pct', label: 'OH%',        cls: 'td-pct',  type: 'num', fmt: v => v + '%' },
+    { key: 'pct',          label: '%',          cls: 'td-pct',  type: 'num', fmt: v => v + '%' },
+    { key: '_bar',         label: '',           cls: 'td-bar',  type: 'bar', barClass: 'bar-heal' },
   ] : [
-    { key: 'name',  label: 'Tank',      cls: 'td-name', type: 'str' },
-    { key: 'total', label: 'Total Dmg', cls: 'td-num',  type: 'num', fmt: fmt },
-    { key: 'dtps',  label: 'DTPS',      cls: 'td-num',  type: 'num', fmt: v => fmt(v) + '/s' },
-    { key: 'pct',   label: '%',         cls: 'td-pct',  type: 'num', fmt: v => v + '%' },
-    { key: '_bar',  label: '',          cls: 'td-bar',  type: 'bar', barClass: 'bar-tank' },
+    { key: 'name',    label: 'Tank',      cls: 'td-name', type: 'str' },
+    { key: 'total',   label: 'Total Dmg', cls: 'td-num',  type: 'num', fmt: fmt },
+    { key: 'dtps',    label: 'DTPS',      cls: 'td-num',  type: 'num', fmt: v => fmt(v) + '/s' },
+    { key: 'hits',    label: 'Hits',      cls: 'td-num',  type: 'num', fmt: v => v.toLocaleString() },
+    { key: 'avg_hit', label: 'Avg Hit',   cls: 'td-num',  type: 'num', fmt: fmt },
+    { key: 'max_hit', label: 'Max Hit',   cls: 'td-num',  type: 'num', fmt: fmt },
+    { key: 'pct',     label: '%',         cls: 'td-pct',  type: 'num', fmt: v => v + '%' },
+    { key: '_bar',    label: '',          cls: 'td-bar',  type: 'bar', barClass: 'bar-tank' },
   ];
 
-  const hasSpells = tab === 'dps';
+  const hasSpells = true;
   content.innerHTML = buildTable(sorted, colDefs, tab, sort, hasSpells);
 
   content.querySelectorAll('th[data-col]').forEach(th => {
@@ -746,23 +777,21 @@ function renderTab(tab) {
     });
   });
 
-  if (hasSpells) {
-    content.querySelectorAll('.player-row').forEach(tr => {
-      tr.addEventListener('click', () => {
-        const name = tr.dataset.name;
-        if (expandedRows.has(name)) expandedRows.delete(name);
-        else expandedRows.add(name);
-        renderTab(tab);
-      });
+  content.querySelectorAll('.player-row').forEach(tr => {
+    tr.addEventListener('click', () => {
+      const name = tr.dataset.name;
+      if (expandedRows.has(name)) expandedRows.delete(name);
+      else expandedRows.add(name);
+      renderTab(tab);
     });
-  }
+  });
 }
 
 function buildTable(rows, cols, tab, sort, hasSpells) {
   if (!rows.length) {
     return '<div style="padding:20px;color:var(--muted);text-align:center">No data</div>';
   }
-  const sortableCols = new Set(['name', 'total', 'dps', 'hps', 'dtps', 'pct']);
+  const sortableCols = new Set(['name', 'total', 'dps', 'hps', 'dtps', 'hits', 'avg_hit', 'max_hit', 'over_total', 'overheal_pct', 'pct']);
   const ncols = cols.length;
 
   let html = '<table class="data-table"><thead><tr>';
@@ -794,54 +823,118 @@ function buildTable(rows, cols, tab, sort, hasSpells) {
     }
     html += '</tr>';
 
-    if (hasSpells && isExpanded && row.by_spell) {
-      const byType = {};
-      for (const [spell, info] of Object.entries(row.by_spell)) {
-        const t = info.type || 'Other';
-        if (!byType[t]) byType[t] = { total: 0, hits: 0, crits: 0, max_hit: 0, spells: [] };
-        byType[t].total += info.total;
-        byType[t].hits  += info.hits  || 0;
-        byType[t].crits += info.crits || 0;
-        byType[t].max_hit = Math.max(byType[t].max_hit, info.max_hit || 0);
-        byType[t].spells.push({ name: spell, ...info });
-      }
-      const sortedTypes = Object.entries(byType).sort((a, b) => b[1].total - a[1].total);
+    if (hasSpells && isExpanded) {
       const playerTotal = row.total || 1;
       const dur = detailData.duration || 1;
-      for (const [typeName, typeData] of sortedTypes) {
-        const typePct  = (typeData.total / playerTotal * 100).toFixed(1);
-        const typeDps  = fmt(Math.round(typeData.total / dur)) + '/s';
-        const typeAvg  = typeData.hits > 0 ? fmt(Math.round(typeData.total / typeData.hits)) : '—';
-        const typeMax  = typeData.max_hit > 0 ? fmt(typeData.max_hit) : '—';
-        const typeCrit = typeData.hits > 0 ? (typeData.crits / typeData.hits * 100).toFixed(1) + '%' : '—';
-        html += `<tr class="spell-group-row">
-          <td>${esc(typeName)}</td>
-          <td class="td-num">${fmt(typeData.total)}</td>
-          <td class="td-num">${typeDps}</td>
-          <td class="td-num">${typeData.hits.toLocaleString()}</td>
-          <td class="td-num">${typeAvg}</td>
-          <td class="td-num">${typeMax}</td>
-          <td class="td-pct">${typeCrit}</td>
-          <td class="td-pct">${typePct}%</td>
-          <td></td>
-        </tr>`;
-        for (const sp of typeData.spells) {
-          const spPct  = (sp.total / playerTotal * 100).toFixed(1);
-          const spDps  = fmt(Math.round(sp.total / dur)) + '/s';
-          const spAvg  = sp.avg_hit  ? fmt(sp.avg_hit)  : '—';
-          const spMax  = sp.max_hit  ? fmt(sp.max_hit)  : '—';
-          const spCrit = sp.crit_rate != null ? sp.crit_rate + '%' : '—';
-          html += `<tr class="spell-row">
-            <td>${esc(sp.name)}</td>
-            <td class="td-num">${fmt(sp.total)}</td>
-            <td class="td-num">${spDps}</td>
-            <td class="td-num">${(sp.hits || 0).toLocaleString()}</td>
-            <td class="td-num">${spAvg}</td>
-            <td class="td-num">${spMax}</td>
-            <td class="td-pct">${spCrit}</td>
-            <td class="td-pct">${spPct}%</td>
+
+      if (tab === 'dps' && row.by_spell) {
+        const byType = {};
+        for (const [spell, info] of Object.entries(row.by_spell)) {
+          const t = info.type || 'Other';
+          if (!byType[t]) byType[t] = { total: 0, hits: 0, crits: 0, max_hit: 0, spells: [] };
+          byType[t].total += info.total;
+          byType[t].hits  += info.hits  || 0;
+          byType[t].crits += info.crits || 0;
+          byType[t].max_hit = Math.max(byType[t].max_hit, info.max_hit || 0);
+          byType[t].spells.push({ name: spell, ...info });
+        }
+        for (const [typeName, typeData] of Object.entries(byType).sort((a, b) => b[1].total - a[1].total)) {
+          const typePct  = (typeData.total / playerTotal * 100).toFixed(1);
+          const typeCrit = typeData.hits > 0 ? (typeData.crits / typeData.hits * 100).toFixed(1) + '%' : '—';
+          html += `<tr class="spell-group-row">
+            <td>${esc(typeName)}</td>
+            <td class="td-num">${fmt(typeData.total)}</td>
+            <td class="td-num">${fmt(Math.round(typeData.total / dur))}/s</td>
+            <td class="td-num">${typeData.hits.toLocaleString()}</td>
+            <td class="td-num">${typeData.hits > 0 ? fmt(Math.round(typeData.total / typeData.hits)) : '—'}</td>
+            <td class="td-num">${typeData.max_hit > 0 ? fmt(typeData.max_hit) : '—'}</td>
+            <td class="td-pct">${typeCrit}</td>
+            <td class="td-pct">${typePct}%</td>
             <td></td>
           </tr>`;
+          for (const sp of typeData.spells) {
+            html += `<tr class="spell-row">
+              <td>${esc(sp.name)}</td>
+              <td class="td-num">${fmt(sp.total)}</td>
+              <td class="td-num">${fmt(Math.round(sp.total / dur))}/s</td>
+              <td class="td-num">${(sp.hits || 0).toLocaleString()}</td>
+              <td class="td-num">${sp.avg_hit ? fmt(sp.avg_hit) : '—'}</td>
+              <td class="td-num">${sp.max_hit ? fmt(sp.max_hit) : '—'}</td>
+              <td class="td-pct">${sp.crit_rate != null ? sp.crit_rate + '%' : '—'}</td>
+              <td class="td-pct">${(sp.total / playerTotal * 100).toFixed(1)}%</td>
+              <td></td>
+            </tr>`;
+          }
+        }
+
+      } else if (tab === 'healing' && row.by_spell) {
+        const byType = {};
+        for (const [spell, info] of Object.entries(row.by_spell)) {
+          const t = info.type || 'Other';
+          if (!byType[t]) byType[t] = { total: 0, over_total: 0, hits: 0, max_hit: 0, spells: [] };
+          byType[t].total      += info.total;
+          byType[t].over_total += info.over_total || 0;
+          byType[t].hits       += info.hits || 0;
+          byType[t].max_hit     = Math.max(byType[t].max_hit, info.max_hit || 0);
+          byType[t].spells.push({ name: spell, ...info });
+        }
+        for (const [typeName, typeData] of Object.entries(byType).sort((a, b) => b[1].total - a[1].total)) {
+          const gross    = typeData.total + typeData.over_total;
+          const ohPct    = gross > 0 ? (typeData.over_total / gross * 100).toFixed(1) + '%' : '—';
+          html += `<tr class="spell-group-row">
+            <td>${esc(typeName)}</td>
+            <td class="td-num">${fmt(typeData.total)}</td>
+            <td class="td-num">${fmt(Math.round(typeData.total / dur))}/s</td>
+            <td class="td-num">${typeData.hits.toLocaleString()}</td>
+            <td class="td-num">${typeData.hits > 0 ? fmt(Math.round(typeData.total / typeData.hits)) : '—'}</td>
+            <td class="td-num">${typeData.max_hit > 0 ? fmt(typeData.max_hit) : '—'}</td>
+            <td class="td-num">${fmt(typeData.over_total)}</td>
+            <td class="td-pct">${ohPct}</td>
+            <td class="td-pct">${(typeData.total / playerTotal * 100).toFixed(1)}%</td>
+            <td></td>
+          </tr>`;
+          for (const sp of typeData.spells) {
+            const spGross = sp.total + (sp.over_total || 0);
+            const spOh    = spGross > 0 ? (sp.over_total / spGross * 100).toFixed(1) + '%' : '—';
+            html += `<tr class="spell-row">
+              <td>${esc(sp.name)}</td>
+              <td class="td-num">${fmt(sp.total)}</td>
+              <td class="td-num">${fmt(Math.round(sp.total / dur))}/s</td>
+              <td class="td-num">${(sp.hits || 0).toLocaleString()}</td>
+              <td class="td-num">${sp.avg_hit ? fmt(sp.avg_hit) : '—'}</td>
+              <td class="td-num">${sp.max_hit ? fmt(sp.max_hit) : '—'}</td>
+              <td class="td-num">${fmt(sp.over_total || 0)}</td>
+              <td class="td-pct">${spOh}</td>
+              <td class="td-pct">${(sp.total / playerTotal * 100).toFixed(1)}%</td>
+              <td></td>
+            </tr>`;
+          }
+        }
+
+      } else if (tab === 'tanking' && row.by_attacker) {
+        for (const [attacker, data] of Object.entries(row.by_attacker)) {
+          html += `<tr class="spell-group-row">
+            <td>${esc(attacker)}</td>
+            <td class="td-num">${fmt(data.total)}</td>
+            <td class="td-num">${fmt(Math.round(data.total / dur))}/s</td>
+            <td class="td-num">${data.hits.toLocaleString()}</td>
+            <td class="td-num">${data.avg_hit ? fmt(data.avg_hit) : '—'}</td>
+            <td class="td-num">${data.max_hit ? fmt(data.max_hit) : '—'}</td>
+            <td class="td-pct">${(data.total / playerTotal * 100).toFixed(1)}%</td>
+            <td></td>
+          </tr>`;
+          for (const [typeName, typeTotal] of Object.entries(data.by_type)) {
+            html += `<tr class="spell-row">
+              <td>${esc(typeName)}</td>
+              <td class="td-num">${fmt(typeTotal)}</td>
+              <td class="td-num">${fmt(Math.round(typeTotal / dur))}/s</td>
+              <td class="td-num">—</td>
+              <td class="td-num">—</td>
+              <td class="td-num">—</td>
+              <td class="td-pct">${(typeTotal / playerTotal * 100).toFixed(1)}%</td>
+              <td></td>
+            </tr>`;
+          }
         }
       }
     }
@@ -869,128 +962,148 @@ function esc(s) {
 // ── Timeline chart ────────────────────────────────
 function renderTimeline() {
   const content = document.getElementById('tab-content');
-  const timeline = (detailData && detailData.dps_timeline) || {};
-  const bucket   = (detailData && detailData.timeline_bucket) || 6;
-  const topPlayers = ((detailData && detailData.dps) || [])
-    .slice(0, 8).map(r => r.name).filter(n => timeline[n]);
+  const bucket  = (detailData && detailData.timeline_bucket) || 6;
 
-  if (!topPlayers.length) {
+  const timelineReady = detailData && detailData.dps_timeline_by_spell != null;
+  const hasData = timelineReady && Object.keys(detailData.dps_timeline_by_spell).length > 0;
+
+  if (!timelineReady) {
+    content.innerHTML = `<div style="padding:40px;color:var(--muted);text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px;">
+      <span class="spinner" style="width:22px;height:22px;"></span>
+      <div>Computing timeline…</div>
+    </div>`;
+    return;
+  }
+  if (!hasData) {
     content.innerHTML = '<div style="padding:20px;color:var(--muted);text-align:center">No timeline data</div>';
     return;
   }
 
+  const btnBase = 'font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid var(--border);cursor:pointer;background:var(--surface);color:var(--muted);transition:all .15s;';
+  const btnActive = 'background:var(--accent);color:#000;border-color:var(--accent);';
+
   content.innerHTML = `
-    <div id="chart-wrap" style="height:100%;display:flex;flex-direction:column;overflow:hidden;padding:10px 12px 8px;gap:8px;box-sizing:border-box;">
-      <canvas id="timeline-canvas" style="flex:1;min-height:0;width:100%;display:block;"></canvas>
-      <div id="timeline-legend" style="display:flex;flex-wrap:wrap;gap:5px 14px;flex-shrink:0;padding:2px 0;"></div>
+    <div style="height:100%;display:flex;flex-direction:column;overflow:hidden;padding:10px 12px 8px;gap:8px;box-sizing:border-box;">
+      <div style="display:flex;align-items:center;gap:16px;flex-shrink:0;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:11px;color:var(--muted);">Break out by:</span>
+          <button class="dim-btn" data-dim="source" style="${btnBase}${btnActive}">Individual Source</button>
+          <button class="dim-btn" data-dim="type"   style="${btnBase}">Type</button>
+          <button class="dim-btn" data-dim="overall" style="${btnBase}">Overall</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:11px;color:var(--muted);">Chart:</span>
+          <button class="chart-btn" data-chart="lines"  style="${btnBase}">Lines</button>
+          <button class="chart-btn" data-chart="stacked" style="${btnBase}${btnActive}">Stacked Area</button>
+        </div>
+      </div>
+      <div id="timeline-plot" style="flex:1;min-height:0;width:100%;"></div>
     </div>`;
 
-  const canvas = document.getElementById('timeline-canvas');
-  const visibleSet = new Set(topPlayers);
+  let currentDim = 'source';
+  let currentChart = 'stacked';
 
-  function buildLegend() {
-    const leg = document.getElementById('timeline-legend');
-    if (!leg) return;
-    leg.innerHTML = '';
-    topPlayers.forEach((name, i) => {
-      const color = CHART_COLORS[i % CHART_COLORS.length];
-      const on = visibleSet.has(name);
-      const div = document.createElement('div');
-      div.style.cssText = `display:flex;align-items:center;gap:5px;cursor:pointer;opacity:${on ? 1 : 0.3};user-select:none;`;
-      div.innerHTML = `<div style="width:16px;height:3px;background:${color};border-radius:2px;flex-shrink:0"></div><span style="font-size:11px;color:var(--text)">${esc(name)}</span>`;
-      div.addEventListener('click', () => {
-        if (visibleSet.has(name)) visibleSet.delete(name);
-        else visibleSet.add(name);
-        buildLegend();
-        draw();
+  document.querySelectorAll('.dim-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentDim = btn.dataset.dim;
+      document.querySelectorAll('.dim-btn').forEach(b => {
+        b.style.cssText = btnBase + (b === btn ? btnActive : '');
       });
-      leg.appendChild(div);
+      renderPlot();
     });
+  });
+
+  document.querySelectorAll('.chart-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentChart = btn.dataset.chart;
+      document.querySelectorAll('.chart-btn').forEach(b => {
+        b.style.cssText = btnBase + (b === btn ? btnActive : '');
+      });
+      renderPlot();
+    });
+  });
+
+  function getSeriesMap() {
+    if (currentDim === 'overall') {
+      return detailData.dps_timeline_overall || {};
+    } else if (currentDim === 'type') {
+      return detailData.dps_timeline_by_type || {};
+    } else {
+      return detailData.dps_timeline_by_spell || {};
+    }
   }
 
-  function draw() {
-    const cvs = document.getElementById('timeline-canvas');
-    if (!cvs) return;
-    const w = cvs.offsetWidth, h = cvs.offsetHeight;
-    if (!w || !h) return;
-    const dpr = window.devicePixelRatio || 1;
-    cvs.width = w * dpr; cvs.height = h * dpr;
-    const ctx = cvs.getContext('2d');
-    ctx.scale(dpr, dpr);
+  function renderPlot() {
+    const seriesMap = getSeriesMap();
+    const names = Object.keys(seriesMap);
+    if (!names.length) return;
 
-    const P = { top: 12, right: 16, bottom: 28, left: 62 };
-    const cw = w - P.left - P.right, ch = h - P.top - P.bottom;
-    if (cw <= 0 || ch <= 0) return;
+    const stacked = currentChart === 'stacked';
 
-    const series = topPlayers
-      .filter(n => visibleSet.has(n) && timeline[n] && timeline[n].length)
-      .map(n => ({ name: n, color: CHART_COLORS[topPlayers.indexOf(n) % CHART_COLORS.length], data: timeline[n] }));
-
-    ctx.fillStyle = '#0f0f0f';
-    ctx.fillRect(0, 0, w, h);
-    if (!series.length) return;
-
-    const maxT   = Math.max(...series.flatMap(s => s.data.map(p => p[0])), bucket) + bucket;
-    const maxDps = Math.max(...series.flatMap(s => s.data.map(p => p[1])), 1);
-    const scl    = Math.pow(10, Math.floor(Math.log10(maxDps * 1.1)));
-    const niceMax = Math.ceil(maxDps * 1.1 / scl) * scl;
-
-    ctx.font = `10px 'Segoe UI', sans-serif`;
-
-    // Y grid + labels
-    const yTicks = 5;
-    for (let i = 0; i <= yTicks; i++) {
-      const y = P.top + ch * (1 - i / yTicks);
-      ctx.strokeStyle = '#1e1e1e'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(P.left, y); ctx.lineTo(P.left + cw, y); ctx.stroke();
-      ctx.fillStyle = '#555'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-      ctx.fillText(fmt(Math.round(niceMax * i / yTicks)), P.left - 5, y);
-    }
-
-    // X grid + labels
+    const allTimes = names.flatMap(n => seriesMap[n].map(p => p[0]));
+    const maxT = Math.max(...allTimes, bucket);
     const roughStep = maxT / 8;
-    let xStep = roughStep < 15 ? 10 : roughStep < 30 ? 15 : roughStep < 60 ? 30
-              : roughStep < 120 ? 60 : roughStep < 300 ? 120 : 300;
-    ctx.fillStyle = '#555'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    for (let t = 0; t <= maxT; t += xStep) {
-      const x = P.left + (t / maxT) * cw;
-      ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(x, P.top); ctx.lineTo(x, P.top + ch); ctx.stroke();
-      ctx.fillText(fmtDur(t), x, P.top + ch + 5);
+    const xStep = roughStep < 15 ? 10 : roughStep < 30 ? 15 : roughStep < 60 ? 30
+                : roughStep < 120 ? 60 : roughStep < 300 ? 120 : 300;
+    const tickvals = [], ticktext = [];
+    for (let t = 0; t <= maxT + xStep; t += xStep) {
+      tickvals.push(t);
+      ticktext.push(fmtDur(t));
     }
 
-    // Axes
-    ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(P.left, P.top); ctx.lineTo(P.left, P.top + ch); ctx.lineTo(P.left + cw, P.top + ch);
-    ctx.stroke();
-
-    // Lines
-    for (const s of series) {
-      ctx.strokeStyle = s.color; ctx.lineWidth = 1.5; ctx.lineJoin = 'round';
-      ctx.beginPath();
-      let first = true;
-      for (const [t, dps] of s.data) {
-        const x = P.left + (t / maxT) * cw;
-        const y = P.top + ch * (1 - dps / niceMax);
-        if (first) { ctx.moveTo(x, y); first = false; } else ctx.lineTo(x, y);
+    const traces = names.map((name, i) => {
+      const color = CHART_COLORS[i % CHART_COLORS.length];
+      const base = {
+        x: seriesMap[name].map(p => p[0]),
+        y: seriesMap[name].map(p => p[1]),
+        name,
+        type: 'scatter',
+        mode: 'lines',
+        line: { color, width: stacked ? 0.5 : 2, shape: 'spline', smoothing: 0.4 },
+        hovertemplate: '<b>%{fullData.name}</b>: %{y:,.0f} DPS<extra></extra>',
+      };
+      if (stacked) {
+        base.stackgroup = 'one';
+        base.fillcolor = color + '99';
       }
-      ctx.stroke();
-    }
+      return base;
+    });
 
-    // Y-axis label
-    ctx.save();
-    ctx.fillStyle = '#444'; ctx.font = `10px 'Segoe UI', sans-serif`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.translate(10, P.top + ch / 2); ctx.rotate(-Math.PI / 2);
-    ctx.fillText('DPS', 0, 0);
-    ctx.restore();
+    const layout = {
+      paper_bgcolor: '#0d0d0d',
+      plot_bgcolor: '#0d0d0d',
+      font: { color: '#d0d0d0', family: "'Segoe UI', system-ui, sans-serif", size: 11 },
+      xaxis: {
+        tickvals, ticktext,
+        gridcolor: '#1e1e1e',
+        linecolor: '#333',
+        zerolinecolor: '#333',
+        tickfont: { color: '#666' },
+      },
+      yaxis: {
+        gridcolor: '#1e1e1e',
+        linecolor: '#333',
+        zerolinecolor: '#333',
+        tickformat: ',.0f',
+        tickfont: { color: '#666' },
+        title: { text: stacked ? 'Total DPS' : 'DPS', font: { color: '#555', size: 11 }, standoff: 8 },
+      },
+      legend: {
+        bgcolor: 'rgba(26,26,26,0.85)',
+        bordercolor: '#333',
+        borderwidth: 1,
+        font: { size: 11 },
+        orientation: 'v',
+      },
+      margin: { t: 12, r: 16, b: 36, l: 72 },
+      hovermode: 'x unified',
+      hoverlabel: { bgcolor: '#1a1a1a', bordercolor: '#444', font: { color: '#d0d0d0', size: 11 } },
+    };
+
+    Plotly.react('timeline-plot', traces, layout, { displayModeBar: false, responsive: true });
   }
 
-  buildLegend();
-  const ro = new ResizeObserver(() => requestAnimationFrame(draw));
-  ro.observe(canvas);
-  requestAnimationFrame(draw);
+  renderPlot();
 }
 
 // ── Spell DB bar ───────────────────────────────────

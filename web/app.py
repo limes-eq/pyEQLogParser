@@ -10,7 +10,7 @@ from eqlogparser.log_processor import process_file
 from eqlogparser.record_manager import RecordManager
 from eqlogparser.player_manager import PlayerManager
 from eqlogparser.data_manager import DataManager
-from eqlogparser.fight_analyzer import detect_fights, aggregate_fights, Fight
+from eqlogparser.fight_analyzer import detect_fights, aggregate_fights, build_timelines, Fight
 
 def _template_dir() -> str:
     if getattr(sys, "frozen", False):
@@ -130,6 +130,16 @@ def get_detail():
     if not selected:
         return jsonify({"error": "No fights selected"}), 404
     return jsonify(aggregate_fights(selected))
+
+
+@app.route("/api/timeline", methods=["POST"])
+def get_timeline():
+    data = request.get_json(force=True)
+    ids = set(data.get("ids", []))
+    selected = [f for f in _current_fights if f.id in ids]
+    if not selected:
+        return jsonify({"error": "No fights selected"}), 404
+    return jsonify(build_timelines(selected))
 
 
 def _summarize(f: Fight) -> dict:
