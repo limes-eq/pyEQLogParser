@@ -1,7 +1,7 @@
 @echo off
 setlocal
 echo ============================================================
-echo  EQ Log Parser ^- Build
+echo  pyEQLogParser ^- Build
 echo ============================================================
 echo.
 
@@ -14,7 +14,7 @@ if errorlevel 1 (
 
 echo Cleaning previous build...
 if exist build rmdir /s /q build
-if exist dist\EQLogParser rmdir /s /q dist\EQLogParser
+if exist dist\pyEQLogParser rmdir /s /q dist\pyEQLogParser
 
 echo.
 echo Running PyInstaller...
@@ -29,9 +29,9 @@ if errorlevel 1 (
 echo.
 echo ============================================================
 echo  Build complete^^!
-echo  Output: dist\EQLogParser\EQLogParser.exe
+echo  Output: dist\pyEQLogParser\pyEQLogParser.exe
 echo.
-echo  To distribute: zip the entire dist\EQLogParser\ folder.
+echo  To distribute: zip the entire dist\pyEQLogParser\ folder.
 echo  Users can replace resources\spells_us.txt with their own.
 echo ============================================================
 pause
