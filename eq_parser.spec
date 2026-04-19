@@ -9,6 +9,7 @@ a = Analysis(
     datas=[
         ('resources/spells_us.txt', 'resources'),
         ('web/templates/index.html', 'web/templates'),
+        ('icon/pyeqlogparser_icon.ico', 'icon')
     ],
     hiddenimports=[
         'eqlogparser',
@@ -31,6 +32,11 @@ a = Analysis(
         'eqlogparser.parsing.line_modifiers_parser',
         'eqlogparser.parsing.misc_line_parser',
         'eqlogparser.parsing.pre_line_parser',
+        'pystray',
+        'pystray._win32',
+        'PIL',
+        'PIL.Image',
+        'PIL.IcoImagePlugin',
     ],
     hookspath=[],
     hooksconfig={},
@@ -60,6 +66,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon="icon/pyeqlogparser_icon.ico",
 )
 
 coll = COLLECT(
