@@ -85,7 +85,6 @@ def parse_log():
     import time as _time
     path = (data.get("path") or "").strip()
     player = (data.get("player") or "").strip()
-    emu = bool(data.get("emu"))
     time_filter = data.get("time_filter", "all")
     _FILTER_HOURS = {"1h": 1, "24h": 24, "3d": 72, "7d": 168, "14d": 336}
     since = _time.time() - _FILTER_HOURS[time_filter] * 3600 if time_filter in _FILTER_HOURS else 0.0
@@ -100,7 +99,6 @@ def parse_log():
             player = m.group(1)
 
     Config.player_name = player
-    Config.is_emu_parsing_enabled = emu
 
     from eqlogparser.parsing import damage_line_parser
     RecordManager._instance = None

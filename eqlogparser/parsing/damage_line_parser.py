@@ -403,7 +403,7 @@ def _parse_line(check_line_type: bool, line_data: LineData, split: list[str], st
             attacker = spell
 
         from eqlogparser.config import Config
-        if Config.is_emu_parsing_enabled and spell and attacker and by_index > -1:
+        if spell and attacker and by_index > -1:
             attacker, spell = spell, attacker
 
         if attacker and spell:
@@ -454,7 +454,7 @@ def _parse_line(check_line_type: bool, line_data: LineData, split: list[str], st
           and by_index == non_melee_index - 1 and is_index > -1 and split[is_index + 1] == "hit"):
         defender = " ".join(split[:is_index])
         from eqlogparser.config import Config
-        attacker = Config.player_name if Config.is_emu_parsing_enabled else Labels.Unk
+        attacker = Config.player_name
         damage = parse_uint(split[points_of_index - 1])
         defender = _update_defender(defender, attacker)
         record = _create_damage_record(line_data, split, stop, attacker, defender, damage, Labels.Dd, Labels.Dd)
@@ -482,29 +482,8 @@ def _parse_line(check_line_type: bool, line_data: LineData, split: list[str], st
         defender = _update_defender(defender, attacker)
         record = _create_damage_record(line_data, split, stop, attacker, defender, 0, Labels.Absorb, "Hits")
 
-    # Live EQ: "X hit Y for N points of non-melee damage." (proc / spell hit without spell name)
-    elif (not Config_is_emu() and for_index > -1 and hit_type_index > -1
-          and split[hit_type_index] == "hit" and for_index < points_of_index
-          and non_melee_index > points_of_index):
-        attacker = " ".join(split[:hit_type_index])
-        defender = " ".join(split[hit_type_index + 1:for_index])
-        damage = parse_uint(split[points_of_index - 1])
-        attacker = _update_attacker(attacker, Labels.Dd)
-        defender_raw = " ".join(split[hit_type_index + 1:for_index])
-        defender = _update_defender(defender_raw, attacker)
-        record = _create_damage_record(line_data, split, stop, attacker, defender, damage, Labels.Dd, Labels.Dd)
-        if record is not None:
-            if (_last_crit is not None
-                    and _last_crit.attacker.lower() == record.attacker.lower()
-                    and (line_data.begin_time - _last_crit.begin_time) <= 1
-                    and not _last_crit.value):
-                from eqlogparser.parsing.line_modifiers_parser import CRIT
-                record.modifiers_mask = CRIT
-                _last_crit = None
-            _pending_dd = (defender_raw, record, line_data.begin_time)
-
-    # EMU: direct damage "X hit Y for N points of non-melee damage."
-    elif (Config_is_emu() and for_index > -1 and hit_type_index > -1
+    # Direct damage: "X hit Y for N points of non-melee damage."
+    elif (for_index > -1 and hit_type_index > -1
           and split[hit_type_index] == "hit" and for_index < points_of_index
           and non_melee_index > points_of_index):
         if emu_pet_index > -1:
@@ -541,22 +520,22 @@ def _parse_line(check_line_type: bool, line_data: LineData, split: list[str], st
             if sub_type2 == Labels.Dd:
                 _pending_dd = (defender_raw, record, line_data.begin_time)
 
-    # EMU absorbed
-    elif (Config_is_emu() and emu_absorbed_index > -1
+    # Absorbed
+    elif (emu_absorbed_index > -1
           and points_of_index > emu_absorbed_index and split[stop] == "damage"):
         from eqlogparser.config import Config
         defender = Config.player_name
         record = _create_damage_record(line_data, split, stop, Labels.Unk, defender, 0, Labels.Absorb, "Hits")
 
-    # EMU aura damage
-    elif (Config_is_emu() and have_index > -1 and have_index == taken_index
+    # Aura damage
+    elif (have_index > -1 and have_index == taken_index
           and points_of_index == taken_index + 3 and split[have_index - 1] == "You"):
         damage = parse_uint(split[points_of_index - 1])
         from eqlogparser.config import Config
         record = _create_damage_record(line_data, split, stop, Labels.Unk, Config.player_name, damage, Labels.Dot, Labels.Dot)
 
-    # EMU shielded
-    elif (Config_is_emu() and has_index > -1 and shielded_index == has_index + 1
+    # Shielded
+    elif (has_index > -1 and shielded_index == has_index + 1
           and points_of_index == stop - 2):
         if emu_pet_index > -1 and emu_pet_index < has_index:
             defender = " ".join(split[:emu_pet_index])
@@ -571,8 +550,8 @@ def _parse_line(check_line_type: bool, line_data: LineData, split: list[str], st
         defender = _update_defender(defender, Labels.Unk)
         record = _create_damage_record(line_data, split, stop, Labels.Unk, defender, 0, Labels.Absorb, "Hits")
 
-    # Old EMU critical melee: "X scores a critical hit! (780)"
-    elif (Config_is_emu() and old_crit_index > -1
+    # Old-style critical melee: "X scores a critical hit! (780)"
+    elif (old_crit_index > -1
           and (cripple_damage_fix > -1 or (len(split) > stop + 1 and len(split[stop + 1]) > 2))):
         if cripple_damage_fix != -1:
             damage = cripple_damage_fix
@@ -893,6 +872,3 @@ def _pick_spell_by_recent_cast(attacker: str, candidates: list, begin_time: floa
     return candidates[0]
 
 
-def Config_is_emu() -> bool:
-    from eqlogparser.config import Config
-    return Config.is_emu_parsing_enabled
