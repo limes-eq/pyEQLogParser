@@ -12,13 +12,17 @@ if errorlevel 1 (
     if errorlevel 1 ( echo pip failed. && pause && exit /b 1 )
 )
 
+echo Checking dependencies...
+pip install pystray Pillow -q
+if errorlevel 1 ( echo pip failed. && pause && exit /b 1 )
+
 echo Cleaning previous build...
 if exist build rmdir /s /q build
 if exist dist\pyEQLogParser rmdir /s /q dist\pyEQLogParser
 
 echo.
 echo Running PyInstaller...
-pyinstaller eq_parser.spec --clean
+py -m PyInstaller eq_parser.spec --clean
 if errorlevel 1 (
     echo.
     echo Build FAILED. Check output above for errors.
