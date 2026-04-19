@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EQ Log Parser</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0d0d0d;
+  --surface: #1a1a1a;
+  --card: #222;
+  --border: #333;
+  --accent: #6ea8fe;
+  --accent2: #f0833a;
+  --text: #d0d0d0;
+  --muted: #888;
+  --danger: #dc3545;
+  --heal: #52c41a;
+  --tank: #a855f7;
+  --row-hover: #2a2a2a;
+  --selected: #1e3a5f;
+}
+
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-size: 13px;
+}
+
+/* ── Header ─────────────────────────────────────── */
+#header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#header h1 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+  margin-right: 4px;
+}
+
+#path-input {
+  flex: 1;
+  min-width: 200px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+#browse-btn {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 5px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#browse-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+#time-filter {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+#time-filter:focus { outline: none; border-color: var(--accent); }
+
+#path-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.emu-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  white-space: nowrap;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+#parse-btn {
+  background: var(--accent);
+  color: #000;
+  border: none;
+  padding: 5px 16px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#parse-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+#parse-btn:hover:not(:disabled) { filter: brightness(1.15); }
+
+#status-msg {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+#status-msg.error { color: var(--danger); }
+#status-msg.ok { color: var(--heal); }
+
+/* ── Main layout ─────────────────────────────────── */
+#main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Fight list ─────────────────────────────────── */
+#fight-panel {
+  width: 270px;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+}
+
+#fight-toolbar {
+  padding: 6px 8px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+
+#fight-search {
+  flex: 1;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 7px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+#fight-search:focus { outline: none; border-color: var(--accent); }
+
+#fight-count {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+#fight-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.fight-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  padding: 5px 8px;
+  border-bottom: 1px solid #1e1e1e;
+  cursor: pointer;
+  user-select: none;
+}
+.fight-row:hover { background: var(--row-hover); }
+.fight-row.selected { background: var(--selected); }
+
+.fight-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.fight-name.multi-kill::after {
+  content: attr(data-count);
+  font-size: 10px;
+  color: var(--muted);
+  margin-left: 4px;
+}
+
+.fight-meta {
+  text-align: right;
+  color: var(--muted);
+  font-size: 11px;
+}
+.fight-dps {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ── Detail panel ───────────────────────────────── */
+#detail-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#detail-header {
+  padding: 6px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#detail-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--accent);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.detail-stat {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.detail-stat span { color: var(--text); font-weight: 600; }
+
+/* ── Tabs ───────────────────────────────────────── */
+#tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.tab-btn {
+  padding: 7px 18px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ── Table area ─────────────────────────────────── */
+#tab-content {
+  flex: 1;
+  overflow: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--card);
+  padding: 6px 10px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.data-table thead th.th-num { text-align: right; }
+.data-table thead th.th-pct { text-align: right; }
+.data-table thead th:hover { color: var(--text); }
+.data-table thead th.sort-asc::after { content: " ↑"; color: var(--accent); }
+.data-table thead th.sort-desc::after { content: " ↓"; color: var(--accent); }
+
+.data-table tbody tr {
+  border-bottom: 1px solid #1a1a1a;
+}
+.data-table tbody tr:hover { background: var(--row-hover); }
+
+.data-table td {
+  padding: 5px 10px;
+  vertical-align: middle;
+}
+
+.td-name { font-weight: 500; color: var(--text); min-width: 120px; }
+.td-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 70px; }
+.td-bar { width: 120px; min-width: 80px; padding-right: 14px; }
+
+.bar-wrap {
+  background: #2a2a2a;
+  border-radius: 3px;
+  height: 6px;
+  overflow: hidden;
+}
+.bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.2s;
+}
+.bar-dps   { background: var(--accent); }
+.bar-heal  { background: var(--heal); }
+.bar-tank  { background: var(--tank); }
+
+.td-pct { text-align: right; color: var(--muted); font-size: 11px; min-width: 45px; }
+
+.breakdown-cell {
+  font-size: 11px;
+  color: var(--muted);
+}
+.breakdown-cell span {
+  margin-right: 8px;
+  white-space: nowrap;
+}
+
+/* ── Expandable spell rows ──────────────────────── */
+.player-row { cursor: pointer; }
+.player-row td:first-child::before {
+  content: '▶ ';
+  font-size: 9px;
+  color: var(--muted);
+  display: inline-block;
+  transition: transform 0.15s;
+}
+.player-row.expanded td:first-child::before {
+  transform: rotate(90deg);
+}
+.spell-group-row td {
+  background: #1e1e1e;
+  padding: 3px 10px;
+  font-size: 11px;
+  color: var(--muted);
+  border-bottom: none;
+}
+.spell-group-row td:first-child {
+  padding-left: 24px;
+  font-weight: 600;
+  color: var(--text);
+}
+.spell-row td {
+  background: #191919;
+  padding: 2px 10px;
+  font-size: 11px;
+  color: var(--muted);
+  border-bottom: none;
+}
+.spell-row td:first-child {
+  padding-left: 40px;
+  color: var(--text);
+}
+.spell-row:last-of-type td { border-bottom: 1px solid #1a1a1a; }
+
+#empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--muted);
+  gap: 8px;
+}
+#empty-state .big { font-size: 32px; }
+
+/* ── Scrollbars ─────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #555; }
+
+/* ── Spell bar ──────────────────────────────────── */
+#spell-bar {
+  background: #161616;
+  border-bottom: 1px solid var(--border);
+  padding: 5px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spell-bar-label {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+#spell-path-input {
+  flex: 1;
+  min-width: 200px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+#spell-browse-btn {
+  background: var(--card);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#spell-browse-btn:hover { border-color: var(--accent); color: var(--accent); }
+#spell-browse-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+#spell-status {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+#spell-status.ok    { color: var(--heal); }
+#spell-status.error { color: var(--danger); }
+
+/* ── Spinner ────────────────────────────────────── */
+.spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid #444;
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>EQ Log Parser</h1>
+  <input id="path-input" type="text" placeholder="Path to EverQuest log file…" autocomplete="off" spellcheck="false">
+  <button id="browse-btn">Browse…</button>
+  <label class="emu-label">
+    <input id="emu-check" type="checkbox" checked> EMU
+  </label>
+  <select id="time-filter">
+    <option value="1h">Last Hour</option>
+    <option value="24h">Last 24 Hours</option>
+    <option value="3d">Last 3 Days</option>
+    <option value="7d">Last 7 Days</option>
+    <option value="14d">Last 14 Days</option>
+    <option value="all" selected>Everything</option>
+  </select>
+  <button id="parse-btn">Parse</button>
+  <span id="status-msg"></span>
+</div>
+<div id="spell-bar">
+  <span class="spell-bar-label">Spells DB:</span>
+  <input id="spell-path-input" type="text" placeholder="spells_us.txt path…" autocomplete="off" spellcheck="false" readonly>
+  <button id="spell-browse-btn">Browse…</button>
+  <span id="spell-status"></span>
+</div>
+
+<div id="main">
+  <div id="fight-panel">
+    <div id="fight-toolbar">
+      <input id="fight-search" type="text" placeholder="Filter mobs…">
+      <span id="fight-count">0 fights</span>
+    </div>
+    <div id="fight-list"></div>
+  </div>
+
+  <div id="detail-panel">
+    <div id="detail-header">
+      <div id="detail-title">Select a fight</div>
+      <div class="detail-stat">Duration: <span id="stat-duration">—</span></div>
+      <div class="detail-stat">Total DMG: <span id="stat-damage">—</span></div>
+      <div class="detail-stat">Avg DPS: <span id="stat-dps">—</span></div>
+    </div>
+    <div id="tabs">
+      <button class="tab-btn active" data-tab="dps">DPS</button>
+      <button class="tab-btn" data-tab="healing">Healing</button>
+      <button class="tab-btn" data-tab="tanking">Tanking</button>
+      <button class="tab-btn" data-tab="timeline">Timeline</button>
+    </div>
+    <div id="tab-content">
+      <div id="empty-state">
+        <div class="big">⚔</div>
+        <div>Parse a log file and select a fight</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────
+let allFights = [];
+let selectedIds = new Set();
+let activeTab = 'dps';
+let detailData = null;
+let sortState = { tab: { dps: { col: 'total', asc: false }, healing: { col: 'total', asc: false }, tanking: { col: 'total', asc: false } } };
+let expandedRows = new Set();
+let lastClickedId = null;
+
+const CHART_COLORS = ['#6ea8fe','#f0833a','#52c41a','#a855f7','#ff6b6b','#ffd166','#06d6a0','#ff99cc'];
+
+// ── Helpers ────────────────────────────────────────
+function fmt(n) {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M';
+  if (n >= 1_000)    return (n / 1_000).toFixed(1) + 'K';
+  return String(n);
+}
+
+function fmtDur(s) {
+  const m = Math.floor(s / 60), r = s % 60;
+  return m > 0 ? `${m}m ${r}s` : `${r}s`;
+}
+
+function fmtTime(ts) {
+  const d = new Date(ts * 1000);
+  const h = String(d.getHours()).padStart(2, '0');
+  const m = String(d.getMinutes()).padStart(2, '0');
+  const s = String(d.getSeconds()).padStart(2, '0');
+  return `${h}:${m}:${s}`;
+}
+
+function setStatus(msg, type) {
+  const el = document.getElementById('status-msg');
+  el.textContent = msg;
+  el.className = type || '';
+}
+
+// ── Browse ─────────────────────────────────────────
+document.getElementById('browse-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('browse-btn');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/browse');
+    const data = await res.json();
+    if (data.path) document.getElementById('path-input').value = data.path;
+  } catch (e) {
+    setStatus('Browse failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ── Parse ──────────────────────────────────────────
+document.getElementById('parse-btn').addEventListener('click', async () => {
+  const path        = document.getElementById('path-input').value.trim();
+  const emu         = document.getElementById('emu-check').checked;
+  const time_filter = document.getElementById('time-filter').value;
+
+  if (!path) { setStatus('Enter a log file path', 'error'); return; }
+
+  const btn = document.getElementById('parse-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  setStatus('Parsing…');
+
+  try {
+    const res = await fetch('/api/parse', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, emu, time_filter }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setStatus(data.error || 'Parse error', 'error'); return; }
+
+    allFights = data.fights;
+    selectedIds.clear();
+    expandedRows.clear();
+    lastClickedId = null;
+    detailData = null;
+    renderFightList();
+    clearDetail();
+    setStatus(`${data.count} fight${data.count !== 1 ? 's' : ''} found`, 'ok');
+  } catch (e) {
+    setStatus('Network error: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Parse';
+  }
+});
+
+// Enter key triggers parse
+document.getElementById('path-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('parse-btn').click();
+});
+
+// ── Fight list ─────────────────────────────────────
+document.getElementById('fight-search').addEventListener('input', renderFightList);
+
+function renderFightList() {
+  const q = document.getElementById('fight-search').value.trim().toLowerCase();
+  let filtered = q ? allFights.filter(f => f.mob.toLowerCase().includes(q)) : allFights;
+  filtered = [...filtered].sort((a, b) => a.start_time - b.start_time);
+  document.getElementById('fight-count').textContent = `${filtered.length} fight${filtered.length !== 1 ? 's' : ''}`;
+
+  const list = document.getElementById('fight-list');
+  list.innerHTML = '';
+  filtered.forEach(f => {
+    const row = document.createElement('div');
+    row.className = 'fight-row' + (selectedIds.has(f.id) ? ' selected' : '');
+    row.dataset.id = f.id;
+    row.innerHTML = `
+      <div>
+        <div class="fight-name">${esc(f.mob)}</div>
+        <div class="breakdown-cell">${fmtTime(f.start_time)} &middot; ${fmtDur(f.duration)}</div>
+      </div>
+      <div class="fight-meta">
+        <div class="fight-dps">${fmt(f.dps)}/s</div>
+        <div>${fmt(f.total_damage)}</div>
+      </div>`;
+    row.addEventListener('click', e => {
+      if (e.shiftKey && lastClickedId !== null) rangeSelect(f.id, filtered);
+      else toggleFight(f.id, e.ctrlKey || e.metaKey);
+    });
+    list.appendChild(row);
+  });
+}
+
+function toggleFight(id, multi) {
+  if (!multi) {
+    selectedIds.clear();
+    selectedIds.add(id);
+  } else {
+    if (selectedIds.has(id)) selectedIds.delete(id);
+    else selectedIds.add(id);
+  }
+  lastClickedId = id;
+  renderFightList();
+  if (selectedIds.size > 0) loadDetail();
+  else clearDetail();
+}
+
+function rangeSelect(toId, filtered) {
+  const fromIdx = filtered.findIndex(f => f.id === lastClickedId);
+  const toIdx   = filtered.findIndex(f => f.id === toId);
+  if (fromIdx === -1 || toIdx === -1) { toggleFight(toId, false); return; }
+  const lo = Math.min(fromIdx, toIdx), hi = Math.max(fromIdx, toIdx);
+  for (let i = lo; i <= hi; i++) selectedIds.add(filtered[i].id);
+  // anchor stays at lastClickedId so chained shift-clicks extend from the same point
+  renderFightList();
+  if (selectedIds.size > 0) loadDetail();
+  else clearDetail();
+}
+
+// ── Detail ─────────────────────────────────────────
+async function loadDetail() {
+  try {
+    const res = await fetch('/api/detail', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [...selectedIds] }),
+    });
+    detailData = await res.json();
+    updateDetailHeader();
+    renderTab(activeTab);
+  } catch (e) {
+    setStatus('Error loading detail: ' + e.message, 'error');
+  }
+}
+
+function updateDetailHeader() {
+  if (!detailData) return;
+  const names = [...selectedIds].map(id => allFights.find(f => f.id === id)?.mob).filter(Boolean);
+  const title = names.length === 1 ? names[0] : `${names.length} fights selected`;
+  document.getElementById('detail-title').textContent = title;
+  document.getElementById('stat-duration').textContent = fmtDur(detailData.duration || 0);
+  document.getElementById('stat-damage').textContent = fmt(detailData.total_damage || 0);
+  const dur = detailData.duration || 1;
+  document.getElementById('stat-dps').textContent = fmt(Math.round((detailData.total_damage || 0) / dur)) + '/s';
+}
+
+function clearDetail() {
+  document.getElementById('detail-title').textContent = 'Select a fight';
+  document.getElementById('stat-duration').textContent = '—';
+  document.getElementById('stat-damage').textContent = '—';
+  document.getElementById('stat-dps').textContent = '—';
+  document.getElementById('tab-content').innerHTML = `
+    <div id="empty-state">
+      <div class="big">⚔</div>
+      <div>Select a fight from the list</div>
+    </div>`;
+  detailData = null;
+}
+
+// ── Tabs ───────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeTab = btn.dataset.tab;
+    if (detailData) renderTab(activeTab);
+  });
+});
+
+function renderTab(tab) {
+  if (!detailData) return;
+  if (tab === 'timeline') { renderTimeline(); return; }
+  const rows = detailData[tab] || [];
+  const sort = sortState.tab[tab] || { col: 'total', asc: false };
+  const sorted = sortRows([...rows], sort.col, sort.asc);
+  const content = document.getElementById('tab-content');
+
+  const colDefs = tab === 'dps' ? [
+    { key: 'name',      label: 'Player',    cls: 'td-name', type: 'str' },
+    { key: 'total',     label: 'Total Dmg', cls: 'td-num',  type: 'num', fmt: fmt },
+    { key: 'dps',       label: 'DPS',       cls: 'td-num',  type: 'num', fmt: v => fmt(v) + '/s' },
+    { key: 'hits',      label: 'Hits',      cls: 'td-num',  type: 'num', fmt: v => v.toLocaleString() },
+    { key: 'avg_hit',   label: 'Avg Hit',   cls: 'td-num',  type: 'num', fmt: fmt },
+    { key: 'max_hit',   label: 'Max Hit',   cls: 'td-num',  type: 'num', fmt: fmt },
+    { key: 'crit_rate', label: 'Crit%',     cls: 'td-pct',  type: 'num', fmt: v => v + '%' },
+    { key: 'pct',       label: '%',         cls: 'td-pct',  type: 'num', fmt: v => v + '%' },
+    { key: '_bar',      label: '',          cls: 'td-bar',  type: 'bar', barClass: 'bar-dps' },
+  ] : tab === 'healing' ? [
+    { key: 'name',  label: 'Healer',     cls: 'td-name', type: 'str' },
+    { key: 'total', label: 'Total Heal', cls: 'td-num',  type: 'num', fmt: fmt },
+    { key: 'hps',   label: 'HPS',        cls: 'td-num',  type: 'num', fmt: v => fmt(v) + '/s' },
+    { key: 'pct',   label: '%',          cls: 'td-pct',  type: 'num', fmt: v => v + '%' },
+    { key: '_bar',  label: '',           cls: 'td-bar',  type: 'bar', barClass: 'bar-heal' },
+  ] : [
+    { key: 'name',  label: 'Tank',      cls: 'td-name', type: 'str' },
+    { key: 'total', label: 'Total Dmg', cls: 'td-num',  type: 'num', fmt: fmt },
+    { key: 'dtps',  label: 'DTPS',      cls: 'td-num',  type: 'num', fmt: v => fmt(v) + '/s' },
+    { key: 'pct',   label: '%',         cls: 'td-pct',  type: 'num', fmt: v => v + '%' },
+    { key: '_bar',  label: '',          cls: 'td-bar',  type: 'bar', barClass: 'bar-tank' },
+  ];
+
+  const hasSpells = tab === 'dps';
+  content.innerHTML = buildTable(sorted, colDefs, tab, sort, hasSpells);
+
+  content.querySelectorAll('th[data-col]').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      const s = sortState.tab[tab];
+      if (s.col === col) s.asc = !s.asc;
+      else { s.col = col; s.asc = false; }
+      renderTab(tab);
+    });
+  });
+
+  if (hasSpells) {
+    content.querySelectorAll('.player-row').forEach(tr => {
+      tr.addEventListener('click', () => {
+        const name = tr.dataset.name;
+        if (expandedRows.has(name)) expandedRows.delete(name);
+        else expandedRows.add(name);
+        renderTab(tab);
+      });
+    });
+  }
+}
+
+function buildTable(rows, cols, tab, sort, hasSpells) {
+  if (!rows.length) {
+    return '<div style="padding:20px;color:var(--muted);text-align:center">No data</div>';
+  }
+  const sortableCols = new Set(['name', 'total', 'dps', 'hps', 'dtps', 'pct']);
+  const ncols = cols.length;
+
+  let html = '<table class="data-table"><thead><tr>';
+  for (const col of cols) {
+    if (col.key === '_bar') {
+      html += `<th></th>`;
+    } else {
+      const sortClass = sort.col === col.key ? (sort.asc ? 'sort-asc' : 'sort-desc') : '';
+      const sortable = sortableCols.has(col.key) ? `data-col="${col.key}"` : '';
+      const alignClass = col.cls === 'td-num' ? 'th-num' : col.cls === 'td-pct' ? 'th-pct' : '';
+      html += `<th class="${[alignClass, sortClass].filter(Boolean).join(' ')}" ${sortable}>${esc(col.label)}</th>`;
+    }
+  }
+  html += '</tr></thead><tbody>';
+
+  for (const row of rows) {
+    const isExpanded = hasSpells && expandedRows.has(row.name);
+    const playerCls = hasSpells ? `player-row${isExpanded ? ' expanded' : ''}` : '';
+    html += `<tr class="${playerCls}" data-name="${esc(row.name)}">`;
+    for (const col of cols) {
+      if (col.key === '_bar') {
+        const pct = row.pct || 0;
+        html += `<td class="td-bar"><div class="bar-wrap"><div class="bar-fill ${col.barClass}" style="width:${pct}%"></div></div></td>`;
+      } else {
+        const val = row[col.key];
+        const display = col.fmt ? col.fmt(val) : (val ?? '—');
+        html += `<td class="${col.cls}">${esc(String(display))}</td>`;
+      }
+    }
+    html += '</tr>';
+
+    if (hasSpells && isExpanded && row.by_spell) {
+      const byType = {};
+      for (const [spell, info] of Object.entries(row.by_spell)) {
+        const t = info.type || 'Other';
+        if (!byType[t]) byType[t] = { total: 0, hits: 0, crits: 0, max_hit: 0, spells: [] };
+        byType[t].total += info.total;
+        byType[t].hits  += info.hits  || 0;
+        byType[t].crits += info.crits || 0;
+        byType[t].max_hit = Math.max(byType[t].max_hit, info.max_hit || 0);
+        byType[t].spells.push({ name: spell, ...info });
+      }
+      const sortedTypes = Object.entries(byType).sort((a, b) => b[1].total - a[1].total);
+      const playerTotal = row.total || 1;
+      const dur = detailData.duration || 1;
+      for (const [typeName, typeData] of sortedTypes) {
+        const typePct  = (typeData.total / playerTotal * 100).toFixed(1);
+        const typeDps  = fmt(Math.round(typeData.total / dur)) + '/s';
+        const typeAvg  = typeData.hits > 0 ? fmt(Math.round(typeData.total / typeData.hits)) : '—';
+        const typeMax  = typeData.max_hit > 0 ? fmt(typeData.max_hit) : '—';
+        const typeCrit = typeData.hits > 0 ? (typeData.crits / typeData.hits * 100).toFixed(1) + '%' : '—';
+        html += `<tr class="spell-group-row">
+          <td>${esc(typeName)}</td>
+          <td class="td-num">${fmt(typeData.total)}</td>
+          <td class="td-num">${typeDps}</td>
+          <td class="td-num">${typeData.hits.toLocaleString()}</td>
+          <td class="td-num">${typeAvg}</td>
+          <td class="td-num">${typeMax}</td>
+          <td class="td-pct">${typeCrit}</td>
+          <td class="td-pct">${typePct}%</td>
+          <td></td>
+        </tr>`;
+        for (const sp of typeData.spells) {
+          const spPct  = (sp.total / playerTotal * 100).toFixed(1);
+          const spDps  = fmt(Math.round(sp.total / dur)) + '/s';
+          const spAvg  = sp.avg_hit  ? fmt(sp.avg_hit)  : '—';
+          const spMax  = sp.max_hit  ? fmt(sp.max_hit)  : '—';
+          const spCrit = sp.crit_rate != null ? sp.crit_rate + '%' : '—';
+          html += `<tr class="spell-row">
+            <td>${esc(sp.name)}</td>
+            <td class="td-num">${fmt(sp.total)}</td>
+            <td class="td-num">${spDps}</td>
+            <td class="td-num">${(sp.hits || 0).toLocaleString()}</td>
+            <td class="td-num">${spAvg}</td>
+            <td class="td-num">${spMax}</td>
+            <td class="td-pct">${spCrit}</td>
+            <td class="td-pct">${spPct}%</td>
+            <td></td>
+          </tr>`;
+        }
+      }
+    }
+  }
+  html += '</tbody></table>';
+  return html;
+}
+
+function sortRows(rows, col, asc) {
+  return rows.sort((a, b) => {
+    const av = a[col], bv = b[col];
+    const cmp = typeof av === 'string' ? av.localeCompare(bv) : (av || 0) - (bv || 0);
+    return asc ? cmp : -cmp;
+  });
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ── Timeline chart ────────────────────────────────
+function renderTimeline() {
+  const content = document.getElementById('tab-content');
+  const timeline = (detailData && detailData.dps_timeline) || {};
+  const bucket   = (detailData && detailData.timeline_bucket) || 6;
+  const topPlayers = ((detailData && detailData.dps) || [])
+    .slice(0, 8).map(r => r.name).filter(n => timeline[n]);
+
+  if (!topPlayers.length) {
+    content.innerHTML = '<div style="padding:20px;color:var(--muted);text-align:center">No timeline data</div>';
+    return;
+  }
+
+  content.innerHTML = `
+    <div id="chart-wrap" style="height:100%;display:flex;flex-direction:column;overflow:hidden;padding:10px 12px 8px;gap:8px;box-sizing:border-box;">
+      <canvas id="timeline-canvas" style="flex:1;min-height:0;width:100%;display:block;"></canvas>
+      <div id="timeline-legend" style="display:flex;flex-wrap:wrap;gap:5px 14px;flex-shrink:0;padding:2px 0;"></div>
+    </div>`;
+
+  const canvas = document.getElementById('timeline-canvas');
+  const visibleSet = new Set(topPlayers);
+
+  function buildLegend() {
+    const leg = document.getElementById('timeline-legend');
+    if (!leg) return;
+    leg.innerHTML = '';
+    topPlayers.forEach((name, i) => {
+      const color = CHART_COLORS[i % CHART_COLORS.length];
+      const on = visibleSet.has(name);
+      const div = document.createElement('div');
+      div.style.cssText = `display:flex;align-items:center;gap:5px;cursor:pointer;opacity:${on ? 1 : 0.3};user-select:none;`;
+      div.innerHTML = `<div style="width:16px;height:3px;background:${color};border-radius:2px;flex-shrink:0"></div><span style="font-size:11px;color:var(--text)">${esc(name)}</span>`;
+      div.addEventListener('click', () => {
+        if (visibleSet.has(name)) visibleSet.delete(name);
+        else visibleSet.add(name);
+        buildLegend();
+        draw();
+      });
+      leg.appendChild(div);
+    });
+  }
+
+  function draw() {
+    const cvs = document.getElementById('timeline-canvas');
+    if (!cvs) return;
+    const w = cvs.offsetWidth, h = cvs.offsetHeight;
+    if (!w || !h) return;
+    const dpr = window.devicePixelRatio || 1;
+    cvs.width = w * dpr; cvs.height = h * dpr;
+    const ctx = cvs.getContext('2d');
+    ctx.scale(dpr, dpr);
+
+    const P = { top: 12, right: 16, bottom: 28, left: 62 };
+    const cw = w - P.left - P.right, ch = h - P.top - P.bottom;
+    if (cw <= 0 || ch <= 0) return;
+
+    const series = topPlayers
+      .filter(n => visibleSet.has(n) && timeline[n] && timeline[n].length)
+      .map(n => ({ name: n, color: CHART_COLORS[topPlayers.indexOf(n) % CHART_COLORS.length], data: timeline[n] }));
+
+    ctx.fillStyle = '#0f0f0f';
+    ctx.fillRect(0, 0, w, h);
+    if (!series.length) return;
+
+    const maxT   = Math.max(...series.flatMap(s => s.data.map(p => p[0])), bucket) + bucket;
+    const maxDps = Math.max(...series.flatMap(s => s.data.map(p => p[1])), 1);
+    const scl    = Math.pow(10, Math.floor(Math.log10(maxDps * 1.1)));
+    const niceMax = Math.ceil(maxDps * 1.1 / scl) * scl;
+
+    ctx.font = `10px 'Segoe UI', sans-serif`;
+
+    // Y grid + labels
+    const yTicks = 5;
+    for (let i = 0; i <= yTicks; i++) {
+      const y = P.top + ch * (1 - i / yTicks);
+      ctx.strokeStyle = '#1e1e1e'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(P.left, y); ctx.lineTo(P.left + cw, y); ctx.stroke();
+      ctx.fillStyle = '#555'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+      ctx.fillText(fmt(Math.round(niceMax * i / yTicks)), P.left - 5, y);
+    }
+
+    // X grid + labels
+    const roughStep = maxT / 8;
+    let xStep = roughStep < 15 ? 10 : roughStep < 30 ? 15 : roughStep < 60 ? 30
+              : roughStep < 120 ? 60 : roughStep < 300 ? 120 : 300;
+    ctx.fillStyle = '#555'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    for (let t = 0; t <= maxT; t += xStep) {
+      const x = P.left + (t / maxT) * cw;
+      ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, P.top); ctx.lineTo(x, P.top + ch); ctx.stroke();
+      ctx.fillText(fmtDur(t), x, P.top + ch + 5);
+    }
+
+    // Axes
+    ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(P.left, P.top); ctx.lineTo(P.left, P.top + ch); ctx.lineTo(P.left + cw, P.top + ch);
+    ctx.stroke();
+
+    // Lines
+    for (const s of series) {
+      ctx.strokeStyle = s.color; ctx.lineWidth = 1.5; ctx.lineJoin = 'round';
+      ctx.beginPath();
+      let first = true;
+      for (const [t, dps] of s.data) {
+        const x = P.left + (t / maxT) * cw;
+        const y = P.top + ch * (1 - dps / niceMax);
+        if (first) { ctx.moveTo(x, y); first = false; } else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    // Y-axis label
+    ctx.save();
+    ctx.fillStyle = '#444'; ctx.font = `10px 'Segoe UI', sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.translate(10, P.top + ch / 2); ctx.rotate(-Math.PI / 2);
+    ctx.fillText('DPS', 0, 0);
+    ctx.restore();
+  }
+
+  buildLegend();
+  const ro = new ResizeObserver(() => requestAnimationFrame(draw));
+  ro.observe(canvas);
+  requestAnimationFrame(draw);
+}
+
+// ── Spell DB bar ───────────────────────────────────
+function setSpellStatus(msg, type) {
+  const el = document.getElementById('spell-status');
+  el.textContent = msg;
+  el.className = type || '';
+}
+
+async function loadSpellFilePath() {
+  try {
+    const res = await fetch('/api/spell-file-path');
+    const data = await res.json();
+    if (data.path) {
+      document.getElementById('spell-path-input').value = data.path;
+      setSpellStatus(`${data.loaded.toLocaleString()} spells loaded`);
+    }
+  } catch (e) {
+    setSpellStatus('Could not load spell file info', 'error');
+  }
+}
+
+async function loadSpellFile(path) {
+  setSpellStatus('Loading…');
+  try {
+    const res = await fetch('/api/spell-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setSpellStatus(data.error || 'Failed to load', 'error');
+    } else {
+      document.getElementById('spell-path-input').value = data.path;
+      setSpellStatus(`${data.spells_loaded.toLocaleString()} spells loaded`, 'ok');
+      setTimeout(() => setSpellStatus(`${data.spells_loaded.toLocaleString()} spells loaded`), 2000);
+    }
+  } catch (e) {
+    setSpellStatus('Network error: ' + e.message, 'error');
+  }
+}
+
+document.getElementById('spell-browse-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('spell-browse-btn');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/browse-spells');
+    const data = await res.json();
+    if (data.path) {
+      await loadSpellFile(data.path);
+    }
+  } catch (e) {
+    setSpellStatus('Browse failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// Load current spell file info on page load
+loadSpellFilePath();
+</script>
+</body>
+</html>
