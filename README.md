@@ -5,7 +5,7 @@ All credit for the logic to the original EQLogParser: https://github.com/kauffma
 
 I wanted to fix direct damage breakouts for emu servers, ran into the SyncFusion depdendency in the main branch, and decided to convert into a fresh take on the idea instead
 
-Allows specifying a spells_us.txt to use for DD parsing
+The web UI allows specifying a spells_us.txt to use for DD parsing, you can also replace the default copy in pyEQLogParser/_internal/resources to avoid having to specify a path every run
 
 <img width="1698" height="556" alt="image" src="https://github.com/user-attachments/assets/d7981a66-029e-480e-8f02-3e8978d14ade" />
 
