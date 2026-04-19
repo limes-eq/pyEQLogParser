@@ -285,6 +285,29 @@ def aggregate_fights(fights: list[Fight]) -> dict:
     }
 
 
+def build_damage_log(fights: list[Fight]) -> dict:
+    if not fights:
+        return {"damage_log": []}
+    start = min(f.start_time for f in fights)
+    rows = []
+    for f in fights:
+        for t, rec in f.damage_dealt:
+            if rec.total <= 0:
+                continue
+            rows.append({
+                "t": round(t - start, 1),
+                "attacker": rec.attacker,
+                "attacker_owner": rec.attacker_owner,
+                "defender": rec.defender,
+                "action": rec.sub_type if rec.sub_type else rec.type,
+                "type": rec.type,
+                "total": rec.total,
+                "crit": rec.modifiers_mask != -1 and bool(rec.modifiers_mask & _CRIT_MASK),
+            })
+    rows.sort(key=lambda r: r["t"])
+    return {"damage_log": rows}
+
+
 def build_timelines(fights: list[Fight]) -> dict:
     return {
         "dps_timeline": _build_dps_timeline(fights),

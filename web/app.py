@@ -10,7 +10,7 @@ from eqlogparser.log_processor import process_file
 from eqlogparser.record_manager import RecordManager
 from eqlogparser.player_manager import PlayerManager
 from eqlogparser.data_manager import DataManager
-from eqlogparser.fight_analyzer import detect_fights, aggregate_fights, build_timelines, Fight
+from eqlogparser.fight_analyzer import detect_fights, aggregate_fights, build_timelines, build_damage_log, Fight
 
 def _template_dir() -> str:
     if getattr(sys, "frozen", False):
@@ -140,6 +140,16 @@ def get_timeline():
     if not selected:
         return jsonify({"error": "No fights selected"}), 404
     return jsonify(build_timelines(selected))
+
+
+@app.route("/api/damage-log", methods=["POST"])
+def get_damage_log():
+    data = request.get_json(force=True)
+    ids = set(data.get("ids", []))
+    selected = [f for f in _current_fights if f.id in ids]
+    if not selected:
+        return jsonify({"error": "No fights selected"}), 404
+    return jsonify(build_damage_log(selected))
 
 
 def _summarize(f: Fight) -> dict:
