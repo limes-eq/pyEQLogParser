@@ -238,6 +238,17 @@ body {
   border-bottom: 1px solid var(--border);
   background: var(--surface);
 }
+#copy-btn {
+  font-size: 11px;
+  padding: 0 12px;
+  background: none;
+  border: none;
+  border-left: 1px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color .15s;
+}
+#copy-btn:hover { color: var(--text); }
 
 .tab-btn {
   padding: 7px 18px;
@@ -489,6 +500,7 @@ body {
       <button class="tab-btn" data-tab="healing">Healing</button>
       <button class="tab-btn" data-tab="tanking">Tanking</button>
       <button class="tab-btn" data-tab="timeline">Timeline</button>
+      <button id="copy-btn" title="Copy to clipboard" style="margin-left:auto;display:none;">Copy</button>
     </div>
     <div id="tab-content">
       <div id="empty-state">
@@ -666,6 +678,7 @@ async function loadDetail() {
     });
     detailData = await res.json();
     updateDetailHeader();
+    updateCopyBtn();
     renderTab(activeTab);
     _loadTimeline(token, ids);
   } catch (e) {
@@ -712,7 +725,10 @@ function clearDetail() {
       <div>Select a fight from the list</div>
     </div>`;
   detailData = null;
+  updateCopyBtn();
 }
+
+document.getElementById('copy-btn').addEventListener('click', copyTabData);
 
 // ── Tabs ───────────────────────────────────────────
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -720,9 +736,56 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     activeTab = btn.dataset.tab;
+    updateCopyBtn();
     if (detailData) renderTab(activeTab);
   });
 });
+
+function updateCopyBtn() {
+  const btn = document.getElementById('copy-btn');
+  const visible = detailData && activeTab !== 'timeline';
+  btn.style.display = visible ? '' : 'none';
+}
+
+function copyTabData() {
+  if (!detailData) return;
+  const btn = document.getElementById('copy-btn');
+  const title = document.getElementById('detail-title').textContent;
+  const dur = detailData.duration || 1;
+
+  let lines, totalLabel, rateLabel, rateSuffix;
+  if (activeTab === 'dps') {
+    const totalDmg = detailData.total_damage || 0;
+    const avgDps   = Math.round(totalDmg / dur);
+    lines      = (detailData.dps || []);
+    totalLabel = `${fmt(totalDmg)} Damage @${fmt(avgDps)}`;
+    rateLabel  = 'dps'; rateSuffix = '';
+  } else if (activeTab === 'healing') {
+    const rows     = detailData.healing || [];
+    const totalHeal = rows.reduce((s, r) => s + r.total, 0);
+    const avgHps    = Math.round(totalHeal / dur);
+    lines      = rows;
+    totalLabel = `${fmt(totalHeal)} Healed @${fmt(avgHps)}`;
+    rateLabel  = 'hps'; rateSuffix = '';
+  } else {
+    const rows      = detailData.tanking || [];
+    const totalTaken = rows.reduce((s, r) => s + r.total, 0);
+    const avgDtps    = Math.round(totalTaken / dur);
+    lines      = rows;
+    totalLabel = `${fmt(totalTaken)} Taken @${fmt(avgDtps)}`;
+    rateLabel  = 'dtps'; rateSuffix = '';
+  }
+
+  const players = lines.slice(0, 10).map((r, i) =>
+    `${i + 1}. ${r.name} = ${fmt(r.total)}@${fmt(r[rateLabel])} in ${dur}s`
+  ).join(', ');
+
+  const text = `${title} in ${dur}s -- ${totalLabel}, ${players}`;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+  });
+}
 
 function renderTab(tab) {
   if (!detailData) return;
