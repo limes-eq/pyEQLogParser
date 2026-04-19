@@ -119,9 +119,9 @@ def aggregate_fights(fights: list[Fight]) -> dict:
     # DPS
     def _new_dps_entry():
         return {
-            "total": 0, "hits": 0, "crits": 0, "max_hit": 0,
+            "total": 0, "hits": 0, "attempts": 0, "crits": 0, "max_hit": 0,
             "by_type": defaultdict(int),
-            "by_spell": defaultdict(lambda: {"total": 0, "type": "", "hits": 0, "crits": 0, "max_hit": 0}),
+            "by_spell": defaultdict(lambda: {"total": 0, "type": "", "hits": 0, "attempts": 0, "crits": 0, "max_hit": 0}),
         }
 
     dps_totals: dict[str, dict] = defaultdict(_new_dps_entry)
@@ -129,10 +129,12 @@ def aggregate_fights(fights: list[Fight]) -> dict:
         for _, rec in f.damage_dealt:
             name = rec.attacker_owner or rec.attacker
             dps_totals[name]["total"] += rec.total
+            dps_totals[name]["attempts"] += 1
             dps_totals[name]["by_type"][rec.type] += rec.total
             spell_key = rec.sub_type if rec.sub_type else rec.type
             sp = dps_totals[name]["by_spell"][spell_key]
             sp["total"] += rec.total
+            sp["attempts"] += 1
             if rec.total > 0:
                 dps_totals[name]["hits"] += 1
                 sp["hits"] += 1
@@ -155,6 +157,7 @@ def aggregate_fights(fights: list[Fight]) -> dict:
             "avg_hit": round(d["total"] / d["hits"]) if d["hits"] > 0 else 0,
             "max_hit": d["max_hit"],
             "crit_rate": round(d["crits"] / d["hits"] * 100, 1) if d["hits"] > 0 else 0.0,
+            "hit_rate": round(d["hits"] / d["attempts"] * 100, 1) if d["attempts"] > 0 else 0.0,
             "pct": round(d["total"] / grand_dmg * 100, 1),
             "by_type": {k: v for k, v in sorted(d["by_type"].items(), key=lambda x: -x[1])},
             "by_spell": {
@@ -162,6 +165,7 @@ def aggregate_fights(fights: list[Fight]) -> dict:
                     **v,
                     "avg_hit": round(v["total"] / v["hits"]) if v["hits"] > 0 else 0,
                     "crit_rate": round(v["crits"] / v["hits"] * 100, 1) if v["hits"] > 0 else 0.0,
+                    "hit_rate": round(v["hits"] / v["attempts"] * 100, 1) if v["attempts"] > 0 else 0.0,
                 }
                 for k, v in sorted(d["by_spell"].items(), key=lambda x: -x[1]["total"])
             },

@@ -854,6 +854,7 @@ function renderTab(tab) {
     { key: 'avg_hit',   label: 'Avg Hit',   cls: 'td-num',  type: 'num', fmt: fmt },
     { key: 'max_hit',   label: 'Max Hit',   cls: 'td-num',  type: 'num', fmt: fmt },
     { key: 'crit_rate', label: 'Crit%',     cls: 'td-pct',  type: 'num', fmt: v => v + '%' },
+    { key: 'hit_rate',  label: 'Hit%',      cls: 'td-pct',  type: 'num', fmt: v => v + '%' },
     { key: 'pct',       label: '%',         cls: 'td-pct',  type: 'num', fmt: v => v + '%' },
     { key: '_bar',      label: '',          cls: 'td-bar',  type: 'bar', barClass: 'bar-dps' },
   ] : tab === 'healing' ? [
@@ -905,7 +906,7 @@ function buildTable(rows, cols, tab, sort, hasSpells) {
   if (!rows.length) {
     return '<div style="padding:20px;color:var(--muted);text-align:center">No data</div>';
   }
-  const sortableCols = new Set(['name', 'total', 'dps', 'hps', 'dtps', 'hits', 'avg_hit', 'max_hit', 'over_total', 'overheal_pct', 'pct']);
+  const sortableCols = new Set(['name', 'total', 'dps', 'hps', 'dtps', 'hits', 'avg_hit', 'max_hit', 'over_total', 'overheal_pct', 'crit_rate', 'hit_rate', 'pct']);
   const ncols = cols.length;
 
   let html = '<table class="data-table"><thead><tr>';
@@ -945,16 +946,40 @@ function buildTable(rows, cols, tab, sort, hasSpells) {
         const byType = {};
         for (const [spell, info] of Object.entries(row.by_spell)) {
           const t = info.type || 'Other';
-          if (!byType[t]) byType[t] = { total: 0, hits: 0, crits: 0, max_hit: 0, spells: [] };
-          byType[t].total += info.total;
-          byType[t].hits  += info.hits  || 0;
-          byType[t].crits += info.crits || 0;
-          byType[t].max_hit = Math.max(byType[t].max_hit, info.max_hit || 0);
+          if (!byType[t]) byType[t] = { total: 0, hits: 0, attempts: 0, crits: 0, max_hit: 0, spells: [] };
+          byType[t].total    += info.total;
+          byType[t].hits     += info.hits     || 0;
+          byType[t].attempts += info.attempts || 0;
+          byType[t].crits    += info.crits    || 0;
+          byType[t].max_hit   = Math.max(byType[t].max_hit, info.max_hit || 0);
           byType[t].spells.push({ name: spell, ...info });
         }
-        for (const [typeName, typeData] of Object.entries(byType).sort((a, b) => b[1].total - a[1].total)) {
-          const typePct  = (typeData.total / playerTotal * 100).toFixed(1);
-          const typeCrit = typeData.hits > 0 ? (typeData.crits / typeData.hits * 100).toFixed(1) + '%' : '—';
+
+        function typeVal(td, col) {
+          if (col === 'hits')      return td.hits;
+          if (col === 'avg_hit')   return td.hits > 0 ? td.total / td.hits : 0;
+          if (col === 'max_hit')   return td.max_hit;
+          if (col === 'crit_rate') return td.hits > 0 ? td.crits / td.hits : 0;
+          if (col === 'hit_rate')  return td.attempts > 0 ? td.hits / td.attempts : 0;
+          return td.total;
+        }
+        function spellVal(sp, col) {
+          if (col === 'hits')      return sp.hits || 0;
+          if (col === 'avg_hit')   return sp.avg_hit || 0;
+          if (col === 'max_hit')   return sp.max_hit || 0;
+          if (col === 'crit_rate') return sp.crit_rate || 0;
+          if (col === 'hit_rate')  return sp.hit_rate || 0;
+          return sp.total || 0;
+        }
+
+        const sortCol = sort.col, sortMul = sort.asc ? 1 : -1;
+        const sortedTypes = Object.entries(byType)
+          .sort((a, b) => sortMul * (typeVal(a[1], sortCol) - typeVal(b[1], sortCol)));
+
+        for (const [typeName, typeData] of sortedTypes) {
+          const typePct     = (typeData.total / playerTotal * 100).toFixed(1);
+          const typeCrit    = typeData.hits > 0 ? (typeData.crits / typeData.hits * 100).toFixed(1) + '%' : '—';
+          const typeHitRate = typeData.attempts > 0 ? (typeData.hits / typeData.attempts * 100).toFixed(1) + '%' : '—';
           html += `<tr class="spell-group-row">
             <td>${esc(typeName)}</td>
             <td class="td-num">${fmt(typeData.total)}</td>
@@ -963,10 +988,14 @@ function buildTable(rows, cols, tab, sort, hasSpells) {
             <td class="td-num">${typeData.hits > 0 ? fmt(Math.round(typeData.total / typeData.hits)) : '—'}</td>
             <td class="td-num">${typeData.max_hit > 0 ? fmt(typeData.max_hit) : '—'}</td>
             <td class="td-pct">${typeCrit}</td>
+            <td class="td-pct">${typeHitRate}</td>
             <td class="td-pct">${typePct}%</td>
             <td></td>
           </tr>`;
-          for (const sp of typeData.spells) {
+          const sortedSpells = [...typeData.spells]
+            .sort((a, b) => sortMul * (spellVal(a, sortCol) - spellVal(b, sortCol)));
+          for (const sp of sortedSpells) {
+            const spHitRate = sp.attempts > 0 ? sp.hit_rate + '%' : '—';
             html += `<tr class="spell-row">
               <td>${esc(sp.name)}</td>
               <td class="td-num">${fmt(sp.total)}</td>
@@ -975,6 +1004,7 @@ function buildTable(rows, cols, tab, sort, hasSpells) {
               <td class="td-num">${sp.avg_hit ? fmt(sp.avg_hit) : '—'}</td>
               <td class="td-num">${sp.max_hit ? fmt(sp.max_hit) : '—'}</td>
               <td class="td-pct">${sp.crit_rate != null ? sp.crit_rate + '%' : '—'}</td>
+              <td class="td-pct">${spHitRate}</td>
               <td class="td-pct">${(sp.total / playerTotal * 100).toFixed(1)}%</td>
               <td></td>
             </tr>`;
