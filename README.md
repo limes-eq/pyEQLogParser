@@ -17,7 +17,7 @@ The web UI allows specifying a spells_us.txt to use for DD parsing, you can also
 No additional config needed, replace pyEQLogParser/_internal/resources/spells_us.txt with a copy from your server
 
 ## Run via Python (platform independent, requirements.txt included)
-`python web/app.py` and then launch http://localhost:5000 in a browser
+`python launch.py` and then launch http://localhost:5000 in a browser
 
 ## Create standalone package
 `build.bat`
