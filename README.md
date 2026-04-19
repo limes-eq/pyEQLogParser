@@ -21,3 +21,5 @@ No additional config needed, replace pyEQLogParser/_internal/resources/spells_us
 
 ## Create standalone package
 `build.bat`
+
+## Note: be sure to close from the system tray icon to shut down the web server
