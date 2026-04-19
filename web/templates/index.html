@@ -238,7 +238,7 @@ body {
   border-bottom: 1px solid var(--border);
   background: var(--surface);
 }
-#copy-btn {
+#exact-btn, #copy-btn {
   font-size: 11px;
   padding: 0 12px;
   background: none;
@@ -248,7 +248,8 @@ body {
   cursor: pointer;
   transition: color .15s;
 }
-#copy-btn:hover { color: var(--text); }
+#exact-btn:hover, #copy-btn:hover { color: var(--text); }
+#exact-btn.active { color: var(--accent); }
 
 .tab-btn {
   padding: 7px 18px;
@@ -500,7 +501,8 @@ body {
       <button class="tab-btn" data-tab="healing">Healing</button>
       <button class="tab-btn" data-tab="tanking">Tanking</button>
       <button class="tab-btn" data-tab="timeline">Timeline</button>
-      <button id="copy-btn" title="Copy to clipboard" style="margin-left:auto;display:none;">Copy</button>
+      <button id="exact-btn" title="Toggle exact numbers" style="margin-left:auto;display:none;">Exact</button>
+      <button id="copy-btn" title="Copy to clipboard" style="display:none;">Copy</button>
     </div>
     <div id="tab-content">
       <div id="empty-state">
@@ -524,7 +526,10 @@ let lastClickedId = null;
 const CHART_COLORS = ['#6ea8fe','#f0833a','#52c41a','#a855f7','#ff6b6b','#ffd166','#06d6a0','#ff99cc'];
 
 // ── Helpers ────────────────────────────────────────
+let exactNumbers = false;
+
 function fmt(n) {
+  if (exactNumbers) return Number(n).toLocaleString();
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M';
   if (n >= 1_000)    return (n / 1_000).toFixed(1) + 'K';
   return String(n);
@@ -678,7 +683,7 @@ async function loadDetail() {
     });
     detailData = await res.json();
     updateDetailHeader();
-    updateCopyBtn();
+    updateTabButtons();
     renderTab(activeTab);
     _loadTimeline(token, ids);
   } catch (e) {
@@ -725,10 +730,16 @@ function clearDetail() {
       <div>Select a fight from the list</div>
     </div>`;
   detailData = null;
-  updateCopyBtn();
+  updateTabButtons();
 }
 
 document.getElementById('copy-btn').addEventListener('click', copyTabData);
+
+document.getElementById('exact-btn').addEventListener('click', () => {
+  exactNumbers = !exactNumbers;
+  document.getElementById('exact-btn').classList.toggle('active', exactNumbers);
+  if (detailData && activeTab !== 'timeline') renderTab(activeTab);
+});
 
 // ── Tabs ───────────────────────────────────────────
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -736,15 +747,15 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     activeTab = btn.dataset.tab;
-    updateCopyBtn();
+    updateTabButtons();
     if (detailData) renderTab(activeTab);
   });
 });
 
-function updateCopyBtn() {
-  const btn = document.getElementById('copy-btn');
+function updateTabButtons() {
   const visible = detailData && activeTab !== 'timeline';
-  btn.style.display = visible ? '' : 'none';
+  document.getElementById('copy-btn').style.display  = visible ? '' : 'none';
+  document.getElementById('exact-btn').style.display = visible ? '' : 'none';
 }
 
 function copyTabData() {
